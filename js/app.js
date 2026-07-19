@@ -716,18 +716,27 @@ function exportCSV() {
   download(`繳費記帳_${todayISO()}.csv`, csv, 'text/csv;charset=utf-8');
   toast('已匯出 CSV');
 }
+function doImport(parsed) {
+  if (!parsed || !parsed.accounts || !parsed.txns) throw new Error('格式不符');
+  if (!confirm('匯入將覆蓋目前所有資料，確定繼續？')) return false;
+  DB = { accounts: parsed.accounts || [], txns: parsed.txns || [], bills: parsed.bills || [] };
+  save(); render(); toast('匯入成功');
+  return true;
+}
 function importJSON(file) {
   const reader = new FileReader();
   reader.onload = () => {
-    try {
-      const data = JSON.parse(reader.result);
-      if (!data.accounts || !data.txns) throw new Error('格式不符');
-      if (!confirm('匯入將覆蓋目前所有資料，確定繼續？')) return;
-      DB = { accounts: data.accounts || [], txns: data.txns || [], bills: data.bills || [] };
-      save(); render(); toast('匯入成功');
-    } catch (e) { toast('匯入失敗：檔案格式錯誤'); }
+    try { doImport(JSON.parse(reader.result)); }
+    catch (e) { toast('匯入失敗：檔案格式錯誤'); }
   };
   reader.readAsText(file);
+}
+// WebView / 手機不支援 <input type=file>，改用貼上文字匯入
+function importFromText() {
+  const raw = ($('#importText').value || '').trim();
+  if (!raw) { toast('請先貼上 JSON 文字'); return; }
+  try { doImport(JSON.parse(raw)); }
+  catch (e) { toast('匯入失敗：JSON 格式錯誤'); }
 }
 
 /* =========================================================
@@ -800,6 +809,7 @@ function bindEvents() {
   $('#exportJsonBtn').addEventListener('click', exportJSON);
   $('#importBtn').addEventListener('click', () => $('#importFile').click());
   $('#importFile').addEventListener('change', e => { if (e.target.files[0]) importJSON(e.target.files[0]); e.target.value = ''; });
+  $('#importTextBtn').addEventListener('click', importFromText);
   $('#resetBtn').addEventListener('click', () => {
     if (confirm('確定清空所有資料？此動作無法復原！')) { localStorage.removeItem(STORE_KEY); DB = { accounts: [], txns: [], bills: [] }; save(); render(); toast('已清空所有資料'); }
   });

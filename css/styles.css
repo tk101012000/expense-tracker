@@ -226,6 +226,9 @@ body {
 .field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--text-2); font-weight: 600; }
 .field input, .field select { padding: 12px; border: 1px solid var(--border); border-radius: 12px; font-size: 16px; background: var(--surface); color: var(--text); }
 .field input:focus, .field select:focus { outline: none; border-color: var(--primary); }
+.field textarea { padding: 12px; border: 1px solid var(--border); border-radius: 12px; font-size: 14px; background: var(--surface); color: var(--text); resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.field textarea:focus { outline: none; border-color: var(--primary); }
+.import-text-box { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
 .field.row { flex-direction: row; }
 .req { color: var(--expense); }
 .err { color: var(--expense); font-size: 12px; font-weight: 500; min-height: 0; }

@@ -169,6 +169,12 @@
             <button class="danger-btn" id="resetBtn">清空資料</button>
           </div>
           <input type="file" id="importFile" accept="application/json" hidden />
+          <div class="import-text-box">
+            <label class="field">或直接貼上 JSON 文字（手機 / WebView 適用）
+              <textarea id="importText" rows="4" placeholder="在此貼上備份的 JSON 內容…"></textarea>
+            </label>
+            <button class="ghost-btn" id="importTextBtn" type="button">從文字匯入</button>
+          </div>
           <p class="hint-text">所有資料僅儲存在本裝置瀏覽器（localStorage），不會上傳。</p>
         </div>
 
