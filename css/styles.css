@@ -253,6 +253,12 @@ body {
 
 canvas { display: block; width: 100% !important; }
 
+/* ---------- Footer ---------- */
+.app-footer {
+  text-align: center; font-size: 11px; color: var(--text-3, #999);
+  padding: 18px 0 6px; display: flex; gap: 8px; justify-content: center;
+}
+
 @media (min-width: 560px) {
   body { font-size: 16px; }
   #main { padding-left: 18px; padding-right: 18px; }

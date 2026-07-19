@@ -40,6 +40,10 @@ const ACCOUNT_META = {
 
 const CHART_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#f59e0b', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#14b8a6', '#6366f1', '#a855f7', '#eab308', '#64748b'];
 
+/* ---------- 版本資訊 ---------- */
+const APP_VERSION = 'v3.2';
+const APP_BUILD_DATE = '2026-07-20';
+
 /* ---------- 工具 ---------- */
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -839,6 +843,9 @@ function init() {
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(() => { });
   }
+  // 頁尾版本號
+  if ($('#appVersion')) $('#appVersion').textContent = APP_VERSION;
+  if ($('#appBuildDate')) $('#appBuildDate').textContent = '更新於 ' + APP_BUILD_DATE;
 }
 document.addEventListener('DOMContentLoaded', init);
 
