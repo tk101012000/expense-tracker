@@ -41,7 +41,7 @@ const ACCOUNT_META = {
 const CHART_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#f59e0b', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#14b8a6', '#6366f1', '#a855f7', '#eab308', '#64748b'];
 
 /* ---------- 版本資訊 ---------- */
-const APP_VERSION = 'v3.10';
+const APP_VERSION = 'v3.11';
 const APP_BUILD_DATE = '2026-07-20';
 
 /* ---------- 工具 ---------- */
@@ -720,12 +720,18 @@ function exportJSON() {
   download(`繳費記帳_${todayISO()}.json`, JSON.stringify(DB, null, 2), 'application/json');
   toast('已匯出 JSON');
 }
+// CSV 公式注入防護：以 = + - @ 或 tab/CR 開頭的儲存格前加單引號，避免 Excel/Sheets 當成公式執行
+function csvCell(v) {
+  v = String(v == null ? '' : v).replace(/"/g, '""');
+  if (/^[=+\-@\t\r]/.test(v)) v = "'" + v;
+  return `"${v}"`;
+}
 function exportCSV() {
   const accName = id => { const a = DB.accounts.find(x => x.id === id); return a ? a.name : ''; };
   const header = ['日期', '類型', '類別', '金額', '帳戶', '備註'];
   const rows = [...DB.txns].sort((a, b) => a.date.localeCompare(b.date)).map(t =>
-    [t.date, t.type === 'income' ? '收入' : '支出', t.category, t.amount, accName(t.accountId), (t.note || '').replace(/"/g, '""')]
-      .map(v => `"${v}"`).join(','));
+    [t.date, t.type === 'income' ? '收入' : '支出', t.category, t.amount, accName(t.accountId), (t.note || '')]
+      .map(csvCell).join(','));
   const csv = '\uFEFF' + [header.join(','), ...rows].join('\r\n'); // BOM 供 Excel 正確辨識中文
   download(`繳費記帳_${todayISO()}.csv`, csv, 'text/csv;charset=utf-8');
   toast('已匯出 CSV');
