@@ -60,8 +60,11 @@
   async function connect() {
     const provider = $('#cloudProvider').value;
     const clientId = $('#cloudClientId').value.trim();
+    const clientSecret = $('#cloudClientSecret').value.trim();
     if (!clientId) { toast('請先填入 ' + PROVIDERS[provider].name + ' 的 Client ID / App Key'); return; }
-    state.provider = provider; state.clientId = clientId; saveState();
+    state.provider = provider; state.clientId = clientId;
+    if (clientSecret) state.clientSecret = clientSecret;
+    saveState();
 
     const verifier = randomStr(64);
     const challenge = await pkceChallenge(verifier);
@@ -113,6 +116,7 @@
       code, client_id: state.clientId, code_verifier: verifier,
       grant_type: 'authorization_code', redirect_uri: REDIRECT,
     });
+    if (state.clientSecret) body.append('client_secret', state.clientSecret);
     const res = await fetch(p.tokenUrl, {
       method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body,
     });
@@ -135,6 +139,7 @@
     const body = new URLSearchParams({
       grant_type: 'refresh_token', refresh_token: state.refreshToken, client_id: state.clientId,
     });
+    if (state.clientSecret) body.append('client_secret', state.clientSecret);
     const res = await fetch(p.tokenUrl, {
       method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body,
     });
