@@ -160,37 +160,44 @@
 
   /* ---------- 上傳 / 下載 ---------- */
   async function upload() {
+    let stage = '取得憑證';
     try {
       const tok = await ensureToken();
+      stage = '上傳雲端';
       const data = window.BK.exportData();
       if (state.provider === 'drive') await uploadDrive(tok, data);
       else await uploadDropbox(tok, data);
       toast('備份已上傳至 ' + PROVIDERS[state.provider].name);
-    } catch (e) { toast('上傳失敗：' + (e.message || e)); }
+    } catch (e) { toast('上傳失敗（' + stage + '）：' + (e.message || e)); }
   }
   async function download() {
+    let stage = '取得憑證';
     try {
       const tok = await ensureToken();
+      stage = '讀取雲端檔案';
       const data = state.provider === 'drive' ? await downloadDrive(tok) : await downloadDropbox(tok);
-      if (!data) { toast('雲端尚無備份檔'); return; }
+      if (!data) { toast('雲端尚無備份檔，請先上傳一次'); return; }
       if (!confirm('從雲端還原將覆蓋目前本機資料，確定繼續？')) return;
+      stage = '解析備份內容';
       window.BK.importData(data);
       toast('已從雲端還原');
-    } catch (e) { toast('還原失敗：' + (e.message || e)); }
+    } catch (e) { toast('還原失敗（' + stage + '）：' + (e.message || e)); }
   }
 
   /* Google Drive */
   async function findDriveFile(tok) {
     const r = await fetch('https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&fields=files(id,name)',
       { headers: { 'Authorization': 'Bearer ' + tok } });
+    if (!r.ok) throw new Error('Drive 清單 ' + r.status + ' ' + (await r.text()).slice(0, 120));
     const j = await r.json();
     return j.files || [];
   }
   async function uploadDrive(tok, data) {
     const files = await findDriveFile(tok);
     const existing = files.find(f => f.name === 'billkeeper_backup.json');
+    let res;
     if (existing) {
-      await fetch(`https://www.googleapis.com/upload/drive/v3/files/${existing.id}?uploadType=media`, {
+      res = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${existing.id}?uploadType=media`, {
         method: 'PATCH', headers: { 'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json' }, body: data,
       });
     } else {
@@ -198,35 +205,40 @@
       const meta = { name: 'billkeeper_backup.json', parents: ['appDataFolder'] };
       const body = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}` +
         `\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${data}\r\n--${boundary}--\r\n`;
-      await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
+      res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
         method: 'POST', headers: { 'Authorization': 'Bearer ' + tok, 'Content-Type': `multipart/related; boundary=${boundary}` }, body,
       });
     }
+    if (!res.ok) throw new Error('Drive 上傳 ' + res.status + ' ' + (await res.text()).slice(0, 120));
   }
   async function downloadDrive(tok) {
     const files = await findDriveFile(tok);
     const f = files.find(x => x.name === 'billkeeper_backup.json');
     if (!f) return null;
     const r = await fetch(`https://www.googleapis.com/drive/v3/files/${f.id}?alt=media`, { headers: { 'Authorization': 'Bearer ' + tok } });
-    return r.ok ? await r.text() : null;
+    if (!r.ok) throw new Error('Drive 下載 ' + r.status + ' ' + (await r.text()).slice(0, 120));
+    return await r.text();
   }
 
   /* Dropbox */
   async function uploadDropbox(tok, data) {
-    await fetch('https://content.dropboxapi.com/2/files/upload', {
+    const res = await fetch('https://content.dropboxapi.com/2/files/upload', {
       method: 'POST',
       headers: {
         'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/octet-stream',
         'Dropbox-API-Arg': JSON.stringify({ path: '/billkeeper_backup.json', mode: 'overwrite', mute: true }),
       }, body: data,
     });
+    if (!res.ok) throw new Error('Dropbox 上傳 ' + res.status + ' ' + (await res.text()).slice(0, 120));
   }
   async function downloadDropbox(tok) {
     const r = await fetch('https://content.dropboxapi.com/2/files/download', {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + tok, 'Dropbox-API-Arg': JSON.stringify({ path: '/billkeeper_backup.json' }) },
     });
-    return r.ok ? await r.text() : null;
+    if (r.status === 409) return null; // 檔案不存在
+    if (!r.ok) throw new Error('Dropbox 下載 ' + r.status + ' ' + (await r.text()).slice(0, 120));
+    return await r.text();
   }
 
   /* ---------- UI ---------- */
