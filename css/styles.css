@@ -198,7 +198,7 @@ body {
 .primary-btn { background: var(--primary); color: #fff; border: none; border-radius: 12px; padding: 12px 20px; font-size: 15px; font-weight: 700; cursor: pointer; flex: 1; }
 .primary-btn:active { background: var(--primary-dark); }
 .ghost-btn { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 12px; padding: 10px 16px; font-size: 14px; cursor: pointer; }
-.danger-btn { background: #fee2e2; color: var(--expense); border: none; border-radius: 12px; padding: 10px 16px; font-size: 14px; cursor: pointer; }
+.danger-btn { background: #f1f5f9; color: var(--text-2, #64748b); border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px 16px; font-size: 14px; cursor: pointer; }
 .fab { margin-top: 4px; width: 100%; padding: 14px; border: 2px dashed var(--border); background: var(--surface); border-radius: var(--radius); color: var(--primary); font-weight: 700; cursor: pointer; font-size: 15px; }
 
 /* ---------- Tabbar ---------- */
