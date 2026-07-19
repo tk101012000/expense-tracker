@@ -41,7 +41,7 @@ const ACCOUNT_META = {
 const CHART_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#f59e0b', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#14b8a6', '#6366f1', '#a855f7', '#eab308', '#64748b'];
 
 /* ---------- 版本資訊 ---------- */
-const APP_VERSION = 'v3.9';
+const APP_VERSION = 'v3.10';
 const APP_BUILD_DATE = '2026-07-20';
 
 /* ---------- 工具 ---------- */
@@ -155,6 +155,7 @@ function getReminders() {
   const list = [];
   DB.bills.forEach(b => {
     const occ = currentOccurrence(b);
+    if (!occ.dueISO) return; // 未設到期日 → 不納入提醒
     if (b.paid && b.paid[occ.periodKey]) return; // 本期已繳
     const dueD = new Date(occ.dueISO + 'T00:00:00');
     const diff = Math.round((dueD - now) / 86400000);
@@ -730,9 +731,9 @@ function exportCSV() {
   toast('已匯出 CSV');
 }
 function doImport(parsed) {
-  if (!parsed || !parsed.accounts || !parsed.txns) throw new Error('格式不符');
+  if (!parsed || !Array.isArray(parsed.accounts) || !Array.isArray(parsed.txns)) throw new Error('格式不符');
   if (!confirm('匯入將覆蓋目前所有資料，確定繼續？')) return false;
-  DB = { accounts: parsed.accounts || [], txns: parsed.txns || [], bills: parsed.bills || [] };
+  DB = { accounts: parsed.accounts || [], txns: parsed.txns || [], bills: Array.isArray(parsed.bills) ? parsed.bills : [] };
   save(); render(); toast('匯入成功');
   return true;
 }
@@ -864,8 +865,8 @@ window.BK = {
   exportData: () => JSON.stringify(DB),
   importData: (str) => {
     const d = JSON.parse(str);
-    if (!d.accounts || !d.txns) throw new Error('檔案格式錯誤');
-    DB = { accounts: d.accounts || [], txns: d.txns || [], bills: d.bills || [] };
+    if (!Array.isArray(d.accounts) || !Array.isArray(d.txns)) throw new Error('檔案格式錯誤');
+    DB = { accounts: d.accounts || [], txns: d.txns || [], bills: Array.isArray(d.bills) ? d.bills : [] };
     save(); render();
   },
 };
