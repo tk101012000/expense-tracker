@@ -116,9 +116,8 @@
       code, client_id: state.clientId, code_verifier: verifier,
       grant_type: 'authorization_code', redirect_uri: REDIRECT,
     });
-    // Google Drive Web Application 類型使用 PKCE 時不需 client_secret
-    const needSecret = state.clientSecret && provider !== 'drive';
-    if (needSecret) body.append('client_secret', state.clientSecret);
+    // v3: 始終傳送 client_secret（若用戶已填寫）；Google 部分專案設定會強制要求
+    if (state.clientSecret) body.append('client_secret', state.clientSecret);
     const res = await fetch(p.tokenUrl, {
       method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body,
     });
@@ -141,9 +140,8 @@
     const body = new URLSearchParams({
       grant_type: 'refresh_token', refresh_token: state.refreshToken, client_id: state.clientId,
     });
-    // Google Drive Web Application 類型使用 PKCE 時不需 client_secret
-    const needSecret = state.clientSecret && state.provider !== 'drive';
-    if (needSecret) body.append('client_secret', state.clientSecret);
+    // v3: 始終傳送 client_secret（若用戶已填寫）
+    if (state.clientSecret) body.append('client_secret', state.clientSecret);
     const res = await fetch(p.tokenUrl, {
       method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body,
     });

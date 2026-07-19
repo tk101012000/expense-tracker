@@ -190,7 +190,7 @@
             <input type="text" id="cloudClientId" placeholder="貼上你的 OAuth Client ID" autocomplete="off" />
           </label>
           <label class="field">Client Secret
-            <input type="password" id="cloudClientSecret" placeholder="桌面應用程式才需填（Web 應用不用）" autocomplete="off" />
+            <input type="password" id="cloudClientSecret" placeholder="請填入用戶端密鑰（必填）" autocomplete="off" />
           </label>
           <p class="hint-text" id="cloudRedirectHint"></p>
           <p class="hint-text">需先在該服務的開發者後台建立 OAuth 應用，並將「重新導向網址」設為上方網址，否則無法登入。</p>
@@ -200,7 +200,7 @@
             <button class="ghost-btn" id="cloudDownloadBtn" disabled>下載還原</button>
             <button class="danger-btn" id="cloudDisconnectBtn" disabled>斷線</button>
           </div>
-          <p class="hint-text" id="cloudStatus" style="margin-top:10px">尚未連接</p>
+          <p class="hint-text" id="cloudStatus" style="margin-top:10px">尚未連接 <small style="color:#999">[v3]</small></p>
           <p class="hint-text">備份內容為完整資料（帳戶／交易／繳費）的 JSON，儲存於你的雲端硬碟私人空間；採用客戶端 OAuth（PKCE），不經過任何第三方伺服器。</p>
         </div>
       </section>
