@@ -41,7 +41,7 @@ const ACCOUNT_META = {
 const CHART_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#f59e0b', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#14b8a6', '#6366f1', '#a855f7', '#eab308', '#64748b'];
 
 /* ---------- 版本資訊 ---------- */
-const APP_VERSION = 'v3.8';
+const APP_VERSION = 'v3.9';
 const APP_BUILD_DATE = '2026-07-20';
 
 /* ---------- 工具 ---------- */
@@ -49,6 +49,8 @@ const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+// 以本地時區把 Date 轉成 YYYY-MM-DD（不要用 toISOString，否則 GMT+8 會跨日）
+function isoLocal(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
 const monthKey = d => (d || todayISO()).slice(0, 7);
 const fmtMoney = n => CURRENCY + (n < 0 ? '-' : '') + Math.abs(Number(n) || 0).toLocaleString('zh-TW', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 const fmtDate = d => { const dt = new Date(d + 'T00:00:00'); return `${dt.getMonth() + 1}/${dt.getDate()}`; };
@@ -180,7 +182,7 @@ function currentOccurrence(bill) {
       due = next;
     }
   }
-  const dueISO = due.toISOString().slice(0, 10);
+  const dueISO = isoLocal(due);
   const periodKey = bill.cycle === 'yearly' ? dueISO.slice(0, 4)
     : bill.cycle === 'quarterly' ? `${dueISO.slice(0, 4)}-Q${Math.floor(due.getMonth() / 3) + 1}`
       : dueISO.slice(0, 7);
@@ -313,7 +315,7 @@ function renderBills() {
       <div class="txn-icon">${CAT_ICON[b.category] || '📄'}</div>
       <div class="bill-main">
         <div class="bill-name">${escapeHtml(b.name)}</div>
-        <div class="bill-sub">${b.cycle ? cycleTxt[b.cycle] : '未設定期'} · ${b.dueDate ? `到期 ${b.occ.dueISO}` : '未設到期日'} · ${acc ? escapeHtml(acc.name) : (b.accountId ? '' : '未指定帳戶')}</div>
+        <div class="bill-sub">${b.cycle ? cycleTxt[b.cycle] : '未設定期'} · ${b.occ.dueISO ? `到期 ${b.occ.dueISO}` : '未設到期日'} · ${acc ? escapeHtml(acc.name) : (b.accountId ? '' : '未指定帳戶')}</div>
         <div style="margin-top:6px">${tag}</div>
       </div>
       <div class="bill-actions">
@@ -372,7 +374,7 @@ function renderStats() {
   // 趨勢（近 6 月）
   const months = [];
   const base = new Date(statMonth + '-01T00:00:00');
-  for (let i = 5; i >= 0; i--) { const d = new Date(base); d.setMonth(d.getMonth() - i); months.push(d.toISOString().slice(0, 7)); }
+  for (let i = 5; i >= 0; i--) { const d = new Date(base); d.setMonth(d.getMonth() - i); months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`); }
   const trend = months.map(m => ({ label: m.slice(5), value: monthTotals(m).exp }));
   drawBars($('#trendChart'), trend);
 
@@ -670,12 +672,14 @@ function saveBill(e) {
   if (editBillId) { const b = DB.bills.find(x => x.id === editBillId); Object.assign(b, payload); toast('已更新繳費項目'); }
   else { DB.bills.push({ id: uid(), paid: {}, ...payload }); toast('已新增繳費項目'); }
 
-  // 勾選「標記為已繳」→ 自動標記當期 + 記帳
-  if ($('#billPaidNow').checked) {
-    const bill = editBillId ? DB.bills.find(x => x.id === editBillId) : DB.bills[DB.bills.length - 1];
-    if (bill) {
-      try {
-        const occ = currentOccurrence(bill);
+  // 勾選「標記為已繳」→ 自動標記當期 + 記帳（與 togglePay 一致，避免編輯時重複記帳）
+  const bill = editBillId ? DB.bills.find(x => x.id === editBillId) : DB.bills[DB.bills.length - 1];
+  if (bill) {
+    try {
+      const occ = currentOccurrence(bill);
+      const wantPaid = $('#billPaidNow').checked;
+      const isPaid = !!(bill.paid && bill.paid[occ.periodKey]);
+      if (wantPaid && !isPaid) {
         bill.paid ||= {};
         bill.paid[occ.periodKey] = true;
         DB.txns.push({
@@ -683,8 +687,13 @@ function saveBill(e) {
           category: bill.category, accountId: bill.accountId, note: `${bill.name}（自動記帳）`, createdAt: Date.now(),
           _fromBill: bill.id,
         });
-      } catch(e) { /* 無週期則跳過 */ }
-    }
+      } else if (!wantPaid && isPaid) {
+        // 編輯時取消勾選 → 同步撤銷當期自動記帳
+        delete bill.paid[occ.periodKey];
+        const idx = DB.txns.map(t => t._fromBill).lastIndexOf(bill.id);
+        if (idx >= 0) DB.txns.splice(idx, 1);
+      }
+    } catch (e) { /* 無週期則跳過 */ }
   }
 
   save(); $('#billModal').hidden = true; render();
