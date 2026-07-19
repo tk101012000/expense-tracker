@@ -159,9 +159,13 @@ body {
 .reminder-info span { font-size: 11px; color: var(--text-2); display: block; }
 
 /* ---------- Stats ---------- */
-.month-picker { display: flex; align-items: center; justify-content: center; gap: 20px; }
-.month-picker .icon-btn { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
-.month-picker span { font-size: 17px; font-weight: 700; min-width: 96px; text-align: center; }
+.month-picker { display: flex; align-items: center; justify-content: center; gap: 24px; padding: 8px 0; }
+.month-picker .icon-btn { background: var(--surface); color: var(--text); box-shadow: var(--shadow);
+  width: 48px; height: 48px; border-radius: 50%; font-size: 22px; font-weight: bold;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  transition: transform 0.1s, background 0.15s; }
+.month-picker .icon-btn:active { transform: scale(0.9); background: #e0e0e0; }
+.month-picker span { font-size: 18px; font-weight: 700; min-width: 100px; text-align: center; }
 .stat-summary { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; text-align: center; }
 .stat-summary > div { background: var(--surface); border-radius: 12px; padding: 12px 6px; box-shadow: var(--shadow); }
 .stat-summary span { font-size: 12px; color: var(--text-2); display: block; }
