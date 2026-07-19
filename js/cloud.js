@@ -268,5 +268,6 @@
       if (!handled) refreshUI();
       bindUI();
     },
+    refreshUI,
   };
 })();
