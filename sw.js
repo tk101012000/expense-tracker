@@ -1,5 +1,5 @@
 /* Service Worker · 離線快取 */
-const CACHE = 'billkeeper-v4';
+const CACHE = 'billkeeper-v5';
 const ASSETS = [
   './',
   './index.html',
