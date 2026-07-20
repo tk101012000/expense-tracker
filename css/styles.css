@@ -212,6 +212,22 @@ body {
 .split-bar > span { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, #2563eb, #60a5fa); }
 .split-total { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--border); font-size: 13px; color: var(--text-2); } /* #14 修復：--line → --border */
 .split-total strong { color: var(--text); }
+
+/* ---------- 分擔計算機（v3.15） ---------- */
+.split-parts { display: flex; flex-direction: column; gap: 8px; }
+.split-part-row { display: flex; align-items: center; gap: 8px; }
+.split-part-row input { flex: 1; min-width: 0; padding: 11px 12px; border: 1px solid var(--border); border-radius: 12px; font-size: 15px; background: var(--surface); color: var(--text); }
+.split-part-row input:focus { outline: none; border-color: var(--primary); }
+.split-part-ratio { flex: 0 0 92px !important; max-width: 92px; text-align: center; }
+.split-part-del { background: var(--surface-2); color: var(--text-2); width: 38px; height: 38px; border-radius: 10px; font-size: 16px; flex-shrink: 0; }
+.split-result-box { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px; }
+.split-result-list { display: flex; flex-direction: column; gap: 8px; }
+.split-result-row { display: flex; align-items: center; justify-content: space-between; background: var(--surface-2); border-radius: 10px; padding: 10px 12px; }
+.sr-name { font-weight: 700; font-size: 14px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sr-mid { font-size: 12px; color: var(--text-2); margin: 0 10px; white-space: nowrap; }
+.sr-amt { font-weight: 800; font-size: 15px; white-space: nowrap; }
+.pill.ok { background: #dcfce7; color: var(--income); }
+.pill.warn { background: #fef3c7; color: #b45309; }
 .hint-text { font-size: 11px; color: var(--text-3); margin-top: 10px; }
 
 /* ---------- Buttons ---------- */

@@ -184,6 +184,11 @@
           </div>
         </div>
         <div class="card" style="margin-top:16px">
+          <div class="card-head"><h2>🧮 分擔計算機</h2></div>
+          <p class="hint-text" style="margin-top:0">輸入總金額與參與人員，立即算出品每人應付金額（平均分擔或自訂比例）。</p>
+          <button class="ghost-btn" id="openSplitCalc" style="width:100%">開啟計算機</button>
+        </div>
+        <div class="card" style="margin-top:16px">
           <div class="card-head"><h2>資料管理</h2></div>
           <div class="data-actions">
             <button class="ghost-btn" id="exportCsvBtn">匯出 CSV</button>
@@ -223,7 +228,7 @@
             <button class="ghost-btn" id="cloudDownloadBtn" disabled>下載還原</button>
             <button class="danger-btn" id="cloudDisconnectBtn" disabled>斷線</button>
           </div>
-          <p class="hint-text" id="cloudStatus" style="margin-top:10px">尚未連接 <small style="color:#999">[v3.14]</small></p>
+          <p class="hint-text" id="cloudStatus" style="margin-top:10px">尚未連接 <small style="color:#999">[v3.15]</small></p>
           <p class="hint-text">備份內容為完整資料（帳戶／交易／繳費）的 JSON，儲存於你的雲端硬碟私人空間；採用客戶端 OAuth（PKCE），不經過任何第三方伺服器。</p>
         </div>
       </section>
@@ -389,10 +394,43 @@
     </div>
   </div>
 
+  <!-- ============ 分擔計算機彈窗 ============ -->
+  <div class="modal" id="splitCalcModal" hidden>
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3>🧮 分擔計算機</h3>
+        <button class="icon-btn" type="button" data-close>✕</button>
+      </div>
+      <div class="modal-body">
+        <label class="field">總金額 <span class="req">*</span>
+          <input type="number" id="splitTotal" step="0.01" min="0" inputmode="decimal" placeholder="0.00" />
+          <small class="err" id="errSplitTotal"></small>
+        </label>
+        <div class="seg-tabs" id="splitModeTabs">
+          <button class="seg active" data-splitmode="equal">平均分擔</button>
+          <button class="seg" data-splitmode="ratio">自訂比例</button>
+        </div>
+        <div id="splitParts" class="split-parts"></div>
+        <div class="data-actions" style="margin-top:4px">
+          <button class="ghost-btn" id="addSplitPart" type="button">＋ 新增人員</button>
+          <button class="ghost-btn" id="splitFromMembers" type="button">從成員匯入</button>
+        </div>
+        <div class="split-result-box">
+          <div class="card-head" style="margin:0 0 10px">
+            <h2>分擔結果</h2>
+            <span class="pill" id="splitValidation"></span>
+          </div>
+          <div id="splitResults" class="split-result-list"></div>
+          <div class="split-total" id="splitResultTotal"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast -->
   <div id="toast" class="toast" hidden></div>
 
-  <script src="js/cloud.js?v=3.14"></script>
-  <script src="js/app.js?v=3.14"></script>
+  <script src="js/cloud.js?v=3.15"></script>
+  <script src="js/app.js?v=3.15"></script>
 </body>
 </html>

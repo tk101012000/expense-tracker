@@ -44,7 +44,7 @@ const ACCOUNT_META = {
 const CHART_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#f59e0b', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#14b8a6', '#6366f1', '#a855f7', '#eab308', '#64748b'];
 
 /* ---------- 版本資訊 ---------- */
-const APP_VERSION = 'v3.14';
+const APP_VERSION = 'v3.15';
 const APP_BUILD_DATE = '2026-07-20';
 
 /* ---------- 工具 ---------- */
@@ -815,6 +815,142 @@ function renderMemberSplit() {
 }
 
 /* =========================================================
+   分擔計算機（人員分擔功能計算選項模組）  v3.15
+   需求對應：
+   1) 平均分擔 / 自訂比例 兩種計算模式
+   2) 可新增、移除參與人員，即時更新每人分擔金額
+   3) 比例驗證機制：確保總比例合計為 100%
+   4) 結果清單顯示 姓名 / 比例 / 應付金額
+   5) 輸入即時反映計算結果（不重建編輯列，避免失去焦點）
+   ========================================================= */
+let splitCalc = { mode: 'equal', total: '', parts: [] };
+let _splitSeq = 0;
+
+function openSplitCalc() {
+  // 首次開啟預填兩位空白參與人員，方便立即使用
+  if (splitCalc.parts.length === 0) {
+    splitCalc.parts = [
+      { id: ++_splitSeq, name: '', ratio: 0 },
+      { id: ++_splitSeq, name: '', ratio: 0 },
+    ];
+  }
+  $('#splitCalcModal').hidden = false;
+  renderSplitCalc();
+  setTimeout(() => $('#splitTotal').focus(), 50);
+}
+
+function addSplitPart() {
+  splitCalc.parts.push({ id: ++_splitSeq, name: '', ratio: 0 });
+  renderSplitCalc();
+}
+
+function removeSplitPart(id) {
+  if (splitCalc.parts.length <= 1) { toast('至少需保留 1 位參與人員'); return; }
+  splitCalc.parts = splitCalc.parts.filter(p => p.id !== id);
+  renderSplitCalc();
+}
+
+// 從既有成員清單匯入姓名（比例歸零，切到比例模式時會自動均分）
+function splitFromMembers() {
+  if (!DB.members.length) { toast('尚無成員，請先到「成員」新增'); return; }
+  splitCalc.parts = DB.members.map(m => ({ id: ++_splitSeq, name: m.name, ratio: 0 }));
+  renderSplitCalc();
+}
+
+function splitCalcSetMode(mode) {
+  // 切到「自訂比例」且尚未設定任何比例時，自動均分（100/n），避免全是 0 難以起手
+  if (mode === 'ratio') {
+    const sum = splitCalc.parts.reduce((s, p) => s + (Number(p.ratio) || 0), 0);
+    if (sum === 0 && splitCalc.parts.length) {
+      const n = splitCalc.parts.length;
+      const each = Math.floor(100 / n);
+      splitCalc.parts.forEach((p, i) => { p.ratio = (i === n - 1) ? (100 - each * (n - 1)) : each; });
+    }
+  }
+  splitCalc.mode = mode;
+  renderSplitCalc();
+}
+
+// 核心計算：回傳 { rows:[{name, ratioPct, amount}], sumRatio, totalValid }
+function splitCalcCompute() {
+  const total = parseFloat(splitCalc.total);
+  const parts = splitCalc.parts;
+  const n = parts.length;
+  const totalValid = total > 0;
+  const rows = [];
+  if (!n) return { rows, sumRatio: 0, totalValid: false };
+
+  if (splitCalc.mode === 'equal') {
+    let allocated = 0;
+    parts.forEach((p, i) => {
+      const ratioPct = n ? 100 / n : 0;
+      let amt = 0;
+      if (totalValid) {
+        // 最後一位吃尾差，確保分擔合計精確等於總金額（避免浮點誤差導致加總不符）
+        if (i === n - 1) amt = Math.round((total - allocated) * 100) / 100;
+        else { amt = Math.round((total / n) * 100) / 100; allocated += amt; }
+      }
+      rows.push({ name: p.name.trim() || `人員${i + 1}`, ratioPct, amount: amt });
+    });
+    return { rows, sumRatio: 100, totalValid };
+  } else {
+    // 自訂比例：依各自 ratio 分配；金額按 ratio/sumRatio 比例計算，確保合計=total
+    const sumRatio = parts.reduce((s, p) => s + (Number(p.ratio) || 0), 0);
+    let allocated = 0;
+    parts.forEach((p, i) => {
+      const ratioPct = Number(p.ratio) || 0;
+      let amt = 0;
+      if (totalValid && sumRatio > 0) {
+        if (i === n - 1) amt = Math.round((total - allocated) * 100) / 100;
+        else { amt = Math.round((total * ratioPct / sumRatio) * 100) / 100; allocated += amt; }
+      }
+      rows.push({ name: p.name.trim() || `人員${i + 1}`, ratioPct, amount: amt });
+    });
+    return { rows, sumRatio: Math.round(sumRatio * 100) / 100, totalValid };
+  }
+}
+
+// 只重繪「參與人員編輯列」（新增/移除/切模式時才需要，避免輸入時失去焦點）
+function renderSplitParts() {
+  $$('#splitModeTabs .seg').forEach(s => s.classList.toggle('active', s.dataset.splitmode === splitCalc.mode));
+  const wrap = $('#splitParts');
+  wrap.innerHTML = splitCalc.parts.map(p => `
+    <div class="split-part-row" data-part="${p.id}">
+      <input type="text" class="split-part-name" data-part-name="${p.id}" value="${escapeHtml(p.name)}" placeholder="姓名" maxlength="20" />
+      ${splitCalc.mode === 'ratio'
+        ? `<input type="number" class="split-part-ratio" data-part-ratio="${p.id}" value="${p.ratio || ''}" step="0.1" min="0" placeholder="比例 %" inputmode="decimal" />`
+        : ''}
+      <button type="button" class="icon-btn split-part-del" data-part-del="${p.id}" title="移除人員">✕</button>
+    </div>`).join('');
+}
+
+// 只重繪「結果區」（輸入金額/姓名/比例時即時呼叫，不動編輯列 → 保留輸入焦點，滿足需求 #5）
+function renderSplitResults() {
+  const { rows, sumRatio, totalValid } = splitCalcCompute();
+  const resEl = $('#splitResults');
+  resEl.innerHTML = rows.length
+    ? rows.map(r => `
+      <div class="split-result-row">
+        <span class="sr-name">${escapeHtml(r.name)}</span>
+        <span class="sr-mid">${splitCalc.mode === 'ratio' ? `${r.ratioPct}%` : `均分 ${r.ratioPct.toFixed(1)}%`}</span>
+        <span class="sr-amt">${totalValid ? fmtMoney(r.amount) : '—'}</span>
+      </div>`).join('')
+    : '<div class="empty">請新增參與人員</div>';
+
+  // 比例驗證提示（需求 #3：確保總比例合計為 100%）
+  const v = $('#splitValidation');
+  if (splitCalc.mode === 'ratio') {
+    if (sumRatio === 100) { v.textContent = '比例合計 100% ✓'; v.className = 'pill ok'; }
+    else { v.textContent = `比例合計 ${sumRatio}%（需 100%）`; v.className = 'pill warn'; }
+  } else {
+    v.textContent = `${rows.length} 人均分`; v.className = 'pill';
+  }
+  $('#splitResultTotal').textContent = totalValid ? `分擔合計 ${fmtMoney(parseFloat(splitCalc.total) || 0)}` : '請輸入總金額';
+}
+
+function renderSplitCalc() { renderSplitParts(); renderSplitResults(); }
+
+/* =========================================================
    繳費彈窗
    ========================================================= */
 let editBillId = null;
@@ -1145,6 +1281,35 @@ function bindMiscEvents() {
 }
 
 // #20 修復：bindEvents 拆分為子函數
+/** 分擔計算機事件（v3.15 新增） */
+function bindSplitCalcEvents() {
+  $('#openSplitCalc').addEventListener('click', openSplitCalc);
+  $('#addSplitPart').addEventListener('click', addSplitPart);
+  $('#splitFromMembers').addEventListener('click', splitFromMembers);
+  // 模式分頁
+  $$('#splitModeTabs .seg').forEach(s => s.addEventListener('click', () => splitCalcSetMode(s.dataset.splitmode)));
+  // 總金額輸入 → 即時重算結果（需求 #5）
+  $('#splitTotal').addEventListener('input', () => { splitCalc.total = $('#splitTotal').value; renderSplitResults(); });
+  // 參與人員列：輸入（姓名/比例）即時更新狀態並重算結果；點擊移除鈕
+  const partsEl = $('#splitParts');
+  partsEl.addEventListener('input', e => {
+    const nameEl = e.target.closest('[data-part-name]');
+    const ratioEl = e.target.closest('[data-part-ratio]');
+    if (nameEl) {
+      const p = splitCalc.parts.find(x => x.id === Number(nameEl.dataset.partName));
+      if (p) p.name = nameEl.value;
+    } else if (ratioEl) {
+      const p = splitCalc.parts.find(x => x.id === Number(ratioEl.dataset.partRatio));
+      if (p) p.ratio = parseFloat(ratioEl.value) || 0;
+    }
+    renderSplitResults(); // 只重繪結果，不重建編輯列 → 輸入不會失去焦點
+  });
+  partsEl.addEventListener('click', e => {
+    const del = e.target.closest('[data-part-del]');
+    if (del) removeSplitPart(Number(del.dataset.partDel));
+  });
+}
+
 function bindEvents() {
   bindTabBarEvents();
   bindTxnEvents();
@@ -1153,6 +1318,7 @@ function bindEvents() {
   bindBillEvents();
   bindListDelegation();
   bindMiscEvents();
+  bindSplitCalcEvents();
 }
 function shiftMonth(mk, n) {
   const [y, m] = mk.split('-').map(Number);
