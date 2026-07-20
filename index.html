@@ -204,6 +204,30 @@
           </div>
         </div>
         <div class="card" style="margin-top:16px">
+          <div class="card-head"><h2>📊 成員分擔統計</h2>
+            <button class="ghost-btn small" id="contribExportBtn" type="button">匯出報表</button>
+          </div>
+          <p class="hint-text" style="margin-top:0">統計每位成員新增的項目數與分擔比例，依時間區間篩選。</p>
+          <div class="seg-tabs" id="contribRange" style="margin:10px 0 14px">
+            <button class="seg active" data-range="all">全部</button>
+            <button class="seg" data-range="day">日</button>
+            <button class="seg" data-range="week">週</button>
+            <button class="seg" data-range="month">月</button>
+          </div>
+          <div class="contrib-summary" id="contribSummary"></div>
+          <div class="contrib-charts">
+            <div class="contrib-col">
+              <div class="contrib-sub">各成員項目數</div>
+              <div id="contribBars" class="contrib-bars"></div>
+            </div>
+            <div class="contrib-col">
+              <div class="contrib-sub">分擔比例</div>
+              <div id="contribDonut" class="contrib-donut"></div>
+            </div>
+          </div>
+          <div class="contrib-detail" id="contribDetail"></div>
+        </div>
+        <div class="card" style="margin-top:16px">
           <div class="card-head"><h2>🧮 分擔計算機</h2></div>
           <p class="hint-text" style="margin-top:0">輸入總金額與參與人員，立即算出品每人應付金額（平均分擔或自訂比例）。</p>
           <button class="ghost-btn" id="openSplitCalc" style="width:100%">開啟計算機</button>
@@ -248,7 +272,7 @@
             <button class="ghost-btn" id="cloudDownloadBtn" disabled>下載還原</button>
             <button class="danger-btn" id="cloudDisconnectBtn" disabled>斷線</button>
           </div>
-          <p class="hint-text" id="cloudStatus" style="margin-top:10px">尚未連接 <small style="color:#999">[yu-v3.17]</small></p>
+          <p class="hint-text" id="cloudStatus" style="margin-top:10px">尚未連接 <small style="color:#999">[yu-v3.18]</small></p>
           <p class="hint-text">備份內容為完整資料（帳戶／交易／繳費）的 JSON，儲存於你的雲端硬碟私人空間；採用客戶端 OAuth（PKCE），不經過任何第三方伺服器。</p>
         </div>
       </section>
@@ -457,6 +481,6 @@
   <div id="toast" class="toast" hidden></div>
 
   <script src="js/cloud.js?v=yu-3.17"></script>
-  <script src="js/app.js?v=yu-3.17"></script>
+  <script src="js/app.js?v=yu-3.18"></script>
 </body>
 </html>

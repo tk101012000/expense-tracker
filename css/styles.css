@@ -237,6 +237,38 @@ body {
 .split-record-row .fab { margin-top: 0; flex: 1; padding: 12px; }
 .hint-text { font-size: 11px; color: var(--text-3); margin-top: 10px; }
 
+/* ---------- 成員分擔統計（v3.18） ---------- */
+.ghost-btn.small { padding: 6px 12px; font-size: 12px; }
+.contrib-summary { font-size: 13px; color: var(--text-2); margin-bottom: 12px; }
+.contrib-charts { display: flex; gap: 14px; flex-wrap: wrap; }
+.contrib-col { flex: 1; min-width: 200px; }
+.contrib-sub { font-size: 12px; color: var(--text-3); margin-bottom: 8px; font-weight: 600; }
+.contrib-bars { display: flex; flex-direction: column; gap: 12px; }
+.contrib-bar-row { cursor: pointer; }
+.contrib-bar-top { display: flex; align-items: center; gap: 6px; font-size: 13px; margin-bottom: 5px; }
+.contrib-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.contrib-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.contrib-val { margin-left: auto; color: var(--text-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.contrib-bar-track { height: 10px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+.contrib-bar-track > span { display: block; height: 100%; border-radius: 999px; background: var(--c, var(--primary)); transition: width .25s ease; }
+.contrib-donut { display: flex; align-items: center; justify-content: center; min-height: 132px; }
+.donut-svg { width: 132px; height: 132px; max-width: 100%; }
+.donut-num { font-size: 22px; font-weight: 700; fill: var(--text); }
+.donut-lbl { font-size: 11px; fill: var(--text-3); }
+.contrib-detail { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.contrib-detail-group { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 2px 12px; }
+.contrib-detail-group summary { cursor: pointer; padding: 8px 0; font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.contrib-detail-group summary::-webkit-details-marker { display: none; }
+.contrib-items { list-style: none; margin: 2px 0 8px; padding: 0; display: flex; flex-direction: column; }
+.contrib-items li { display: flex; flex-direction: column; font-size: 13px; padding: 7px 0; border-top: 1px dashed var(--border); }
+.ci-name { font-weight: 600; }
+.ci-meta { font-size: 12px; color: var(--text-3); margin-top: 2px; }
+/* 窄螢幕：兩欄圖表改為單欄堆疊 */
+@media (max-width: 380px) {
+  .contrib-charts { flex-direction: column; }
+  .contrib-col { min-width: 0; }
+}
+
 /* ---------- Buttons ---------- */
 .primary-btn { background: var(--primary); color: #fff; border: none; border-radius: 12px; padding: 12px 20px; font-size: 15px; font-weight: 700; cursor: pointer; flex: 1; }
 .primary-btn:active { background: var(--primary-dark); }

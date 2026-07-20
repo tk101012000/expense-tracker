@@ -44,7 +44,7 @@ const ACCOUNT_META = {
 const CHART_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#f59e0b', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#14b8a6', '#6366f1', '#a855f7', '#eab308', '#64748b'];
 
 /* ---------- 版本資訊 ---------- */
-const APP_VERSION = 'yu-v3.17';
+const APP_VERSION = 'yu-v3.18';
 const APP_BUILD_DATE = '2026-07-20';
 
 /* ---------- 工具 ---------- */
@@ -456,6 +456,7 @@ function renderAccounts() {
   }).join('') || '<div class="empty">尚無帳戶</div>';
   renderMembers();
   renderMemberSplit();
+  renderMemberContrib();
   if (window.Cloud) Cloud.refreshUI();
 }
 
@@ -837,6 +838,154 @@ function onSplitPeriodChange() {
     if (e && !e.value) e.value = todayISO();
   }
   renderMemberSplit();
+}
+
+/* =========================================================
+   成員分擔統計（新增項目貢獻度）  v3.18
+   將「成員新增項目」映射為账本交易：paidBy 歸屬成員、
+   date 作為建立時間、note/category 作為項目名稱。
+   ========================================================= */
+const CONTRIB_COLORS = ['#2563eb', '#f59e0b', '#16a34a', '#a855f7', '#ef4444', '#06b6d4', '#ec4899', '#64748b'];
+function contribColor(i) { return CONTRIB_COLORS[i % CONTRIB_COLORS.length]; }
+
+// 判斷交易是否落在所選時間區間（日/週/月/全部）；週以週一為起點
+function contribInRange(t, range) {
+  if (range === 'all') return true;
+  const d = t.date || '';
+  if (range === 'day') return d === todayISO();
+  if (range === 'month') return d.slice(0, 7) === todayISO().slice(0, 7);
+  if (range === 'week') {
+    const today = new Date(todayISO() + 'T00:00:00');
+    const dow = (today.getDay() + 6) % 7;
+    const monday = new Date(today); monday.setDate(today.getDate() - dow);
+    const next = new Date(monday); next.setDate(monday.getDate() + 7);
+    const td = new Date(d + 'T00:00:00');
+    return td >= monday && td < next;
+  }
+  return true;
+}
+
+// 彙總指定區間內各成員的項目貢獻
+function contribAggregate(range) {
+  const list = DB.txns.filter(t => contribInRange(t, range));
+  const map = new Map();
+  DB.members.forEach(m => map.set(m.id, { member: m, count: 0, total: 0, items: [] }));
+  const unassigned = { member: { id: '', name: '（未指定）' }, count: 0, total: 0, items: [] };
+  list.forEach(t => {
+    const name = (t.note ? t.note : '') || t.category || '（未命名項目）';
+    const e = (t.paidBy && map.has(t.paidBy)) ? map.get(t.paidBy) : unassigned;
+    e.count++; e.total += Number(t.amount) || 0;
+    e.items.push({ name, date: t.date, amount: Number(t.amount) || 0, type: t.type === 'income' ? '收入' : '支出' });
+  });
+  const rows = [...map.values(), unassigned].filter(r => r.count > 0);
+  rows.sort((a, b) => b.count - a.count || b.total - a.total);
+  const total = rows.reduce((s, r) => s + r.count, 0);
+  return { rows, total, listLen: list.length };
+}
+
+// SVG 環狀圖（自繪，無外部依賴）：各成員分擔比例
+function renderContribDonut(rows, total) {
+  const host = $('#contribDonut'); if (!host) return;
+  if (!rows.length || !total) { host.innerHTML = '<div class="empty">無資料</div>'; return; }
+  const R = 52, C = 2 * Math.PI * R, cx = 60, cy = 60;
+  let acc = 0;
+  const segs = rows.map((r, i) => {
+    const len = (r.count / total) * C;
+    const seg = `<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="${contribColor(i)}" stroke-width="16" stroke-dasharray="${len.toFixed(2)} ${(C - len).toFixed(2)}" stroke-dashoffset="${(-acc).toFixed(2)}" transform="rotate(-90 ${cx} ${cy})"/>`;
+    acc += len;
+    return seg;
+  }).join('');
+  host.innerHTML = `<svg viewBox="0 0 120 120" class="donut-svg" role="img" aria-label="分擔比例">${segs}<text x="60" y="56" text-anchor="middle" class="donut-num">${total}</text><text x="60" y="74" text-anchor="middle" class="donut-lbl">項</text></svg>`;
+}
+
+// 主渲染：摘要 + 長條圖 + 環狀圖 + 明細
+function renderMemberContrib() {
+  const detail = $('#contribDetail'); if (!detail) return;
+  const active = document.querySelector('#contribRange .seg.active');
+  const range = active ? active.dataset.range : 'all';
+  const { rows, total, listLen } = contribAggregate(range);
+
+  $('#contribSummary').innerHTML = `共 ${listLen} 筆項目 · ${DB.members.length} 位成員` +
+    (total ? ` · 最多：${escapeHtml(rows[0].member.name)}（${rows[0].count} 項）` : '');
+
+  const maxCount = rows.reduce((m, r) => Math.max(m, r.count), 0);
+  $('#contribBars').innerHTML = rows.map((r, i) => {
+    const pct = total ? Math.round(r.count / total * 100) : 0;
+    const w = maxCount ? Math.round(r.count / maxCount * 100) : 0;
+    return `<div class="contrib-bar-row" data-mid="${escapeHtml(r.member.id)}" style="--c:${contribColor(i)}">
+      <div class="contrib-bar-top">
+        <span class="contrib-dot" style="background:${contribColor(i)}"></span>
+        <span class="contrib-name">${escapeHtml(r.member.name)}</span>
+        <span class="contrib-val">${r.count} 項 · ${pct}%</span>
+      </div>
+      <div class="contrib-bar-track"><span style="width:${w}%"></span></div>
+    </div>`;
+  }).join('') || '<div class="empty">此範圍尚無項目</div>';
+
+  renderContribDonut(rows, total);
+
+  $('#contribDetail').innerHTML = rows.map((r, i) => {
+    const items = [...r.items].sort((a, b) => b.date.localeCompare(a.date)).map(it =>
+      `<li><span class="ci-name">${escapeHtml(it.name)}</span><span class="ci-meta">${escapeHtml(it.date)} · ${it.type} · ${fmtMoney(it.amount)}</span></li>`
+    ).join('');
+    return `<details class="contrib-detail-group" data-mid="${escapeHtml(r.member.id)}">
+      <summary><span class="contrib-dot" style="background:${contribColor(i)}"></span>${escapeHtml(r.member.name)} 的 ${r.count} 項 · ${fmtMoney(r.total)}</summary>
+      <ul class="contrib-items">${items}</ul>
+    </details>`;
+  }).join('') || '<div class="empty">此範圍尚無項目</div>';
+}
+
+// 匯出成員分擔統計報表（CSV：摘要 + 明細）
+function exportContrib() {
+  const active = document.querySelector('#contribRange .seg.active');
+  const range = active ? active.dataset.range : 'all';
+  const rangeTxt = { all: '全部', day: '今日', week: '本週', month: '本月' }[range] || range;
+  const { rows, total } = contribAggregate(range);
+  if (!total) { toast('此範圍尚無資料可匯出'); return; }
+  const lines = [];
+  lines.push(csvCell('成員分擔統計報表（區間：' + rangeTxt + '）'));
+  lines.push([csvCell('成員'), csvCell('項目數'), csvCell('佔比%'), csvCell('總金額')].join(','));
+  rows.forEach(r => {
+    const pct = total ? Math.round(r.count / total * 100) : 0;
+    lines.push([csvCell(r.member.name), csvCell(r.count), csvCell(pct), csvCell(r.total)].join(','));
+  });
+  lines.push('');
+  lines.push(csvCell('--- 明細 ---'));
+  lines.push([csvCell('成員'), csvCell('項目名稱'), csvCell('建立時間'), csvCell('類型'), csvCell('金額')].join(','));
+  rows.forEach(r => {
+    [...r.items].sort((a, b) => b.date.localeCompare(a.date)).forEach(it =>
+      lines.push([csvCell(r.member.name), csvCell(it.name), csvCell(it.date), csvCell(it.type), csvCell(it.amount)].join(','))
+    );
+  });
+  const csv = '﻿' + lines.join('\r\n');
+  download(`成員分擔統計_${todayISO()}.csv`, csv, 'text/csv;charset=utf-8');
+  toast('已匯出統計報表');
+}
+
+// 成員分擔統計：範圍切換、長條圖點擊展開明細、匯出
+function bindContribEvents() {
+  const seg = $('#contribRange');
+  if (seg) {
+    seg.addEventListener('click', e => {
+      const btn = e.target.closest('.seg');
+      if (!btn) return;
+      seg.querySelectorAll('.seg').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      renderMemberContrib();
+    });
+  }
+  const bars = $('#contribBars');
+  if (bars) {
+    bars.addEventListener('click', e => {
+      const row = e.target.closest('.contrib-bar-row');
+      if (!row) return;
+      const mid = row.dataset.mid || '';
+      const grp = [...document.querySelectorAll('#contribDetail details')].find(d => (d.dataset.mid || '') === mid);
+      if (grp) grp.open = !grp.open;
+    });
+  }
+  const ex = $('#contribExportBtn');
+  if (ex) ex.addEventListener('click', exportContrib);
 }
 
 /* =========================================================
@@ -1391,6 +1540,7 @@ function bindEvents() {
   bindListDelegation();
   bindMiscEvents();
   bindSplitCalcEvents();
+  bindContribEvents();
 }
 function shiftMonth(mk, n) {
   const [y, m] = mk.split('-').map(Number);
