@@ -15,6 +15,21 @@
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <link rel="stylesheet" href="css/styles.css" />
+  <!-- OAuth 回傳橋接：本頁若在「系統瀏覽器 / Chrome Custom Tabs」（非 App 內 WebView）載入，
+       且網址帶 ?code=（Google 授權回傳），則改以自訂 scheme 把 code/state 回傳給 Android App，
+       避開嵌入 WebView 的 disallowed_useragent。桌面瀏覽器（非 Android）不攔截，照常走 handleRedirect。 -->
+  <script>
+    (function () {
+      try {
+        var isNative = (typeof BKNATIVE !== 'undefined');
+        var isAndroid = /Android/i.test(navigator.userAgent);
+        var u = new URL(location.href);
+        if (!isNative && isAndroid && u.searchParams.get('code')) {
+          location.replace('billingtracker://oauth/callback' + location.search);
+        }
+      } catch (e) {}
+    })();
+  </script>
 </head>
 <body>
   <div id="app">
@@ -233,7 +248,7 @@
             <button class="ghost-btn" id="cloudDownloadBtn" disabled>下載還原</button>
             <button class="danger-btn" id="cloudDisconnectBtn" disabled>斷線</button>
           </div>
-          <p class="hint-text" id="cloudStatus" style="margin-top:10px">尚未連接 <small style="color:#999">[yu-v3.16]</small></p>
+          <p class="hint-text" id="cloudStatus" style="margin-top:10px">尚未連接 <small style="color:#999">[yu-v3.17]</small></p>
           <p class="hint-text">備份內容為完整資料（帳戶／交易／繳費）的 JSON，儲存於你的雲端硬碟私人空間；採用客戶端 OAuth（PKCE），不經過任何第三方伺服器。</p>
         </div>
       </section>
@@ -441,7 +456,7 @@
   <!-- Toast -->
   <div id="toast" class="toast" hidden></div>
 
-  <script src="js/cloud.js?v=3.15"></script>
-  <script src="js/app.js?v=yu-3.16"></script>
+  <script src="js/cloud.js?v=yu-3.17"></script>
+  <script src="js/app.js?v=yu-3.17"></script>
 </body>
 </html>

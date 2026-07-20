@@ -1,7 +1,7 @@
 /* =========================================================
    雲端備份模組  ·  客戶端 OAuth2 PKCE（無後端、無密鑰暴露）
    支援 Google Drive（appDataFolder 私人空間）與 Dropbox
-   v3.14 — 審計修復版（#3 憑證處理 / #12 併發鎖）
+   v3.14 審計修復版（#3 憑證處理 / #12 併發鎖）→ v3.17 修復 disallowed_useragent（OAuth 改由系統瀏覽器 / Chrome Custom Tabs 開啟，回傳經 billingtracker:// scheme）
    ========================================================= */
 (function () {
   'use strict';
@@ -89,7 +89,15 @@
     if (p.scope) params.set('scope', p.scope);
     if (p.extraAuth) p.extraAuth.split('&').forEach(kv => { const [k, v] = kv.split('='); params.set(k, v); });
 
-    location.href = p.authUrl + '?' + params.toString();
+    const target = p.authUrl + '?' + params.toString();
+    // 修復 disallowed_useragent：嵌入 WebView 的 UA 含 "; wv;"，Google 會阻擋 OAuth。
+    // 改由 Android 端 BKNATIVE.openOAuth 以「系統瀏覽器 / Chrome Custom Tabs」開啟授權頁；
+    // 非 App 環境（桌面瀏覽器）才退回原本的 location.href。
+    if (window.BKNATIVE && typeof window.BKNATIVE.openOAuth === 'function') {
+      window.BKNATIVE.openOAuth(target);
+    } else {
+      location.href = target;
+    }
   }
 
   async function handleRedirect() {
@@ -288,6 +296,31 @@
     $('#cloudDisconnectBtn').addEventListener('click', () => disconnect(true));
     refreshUI();
   }
+
+  /* ---------- 供 Android 原生層回傳 OAuth 結果 ----------
+     授權頁改由系統瀏覽器 / Chrome Custom Tabs 開啟（見 connect()），
+     完成後 Google 重定向到 REDIRECT（本託管頁），該頁在「非 WebView」環境下
+     會以自訂 scheme billingtracker://oauth/callback 把 code/state 回傳給 App，
+     MainActivity.onNewIntent 收到後呼叫此函式完成 token 交換。 */
+  window.BKOAuthBridge = async function (code, stateKey, err) {
+    if (!code) {
+      if (err) toast('授權失敗：' + err);
+      else toast('授權已取消');
+      cleanup();
+      return;
+    }
+    const raw = sessionStorage.getItem('bk_oauth_' + stateKey);
+    if (!raw) { toast('找不到授權資訊，請重新連接'); cleanup(); return; }
+    const { provider, verifier } = JSON.parse(raw);
+    sessionStorage.removeItem('bk_oauth_' + stateKey);
+    try {
+      const tok = await exchange(provider, code, verifier);
+      applyToken(provider, tok);
+      toast('已連接 ' + PROVIDERS[provider].name);
+    } catch (e) {
+      toast('連接失敗：' + (e.message || e));
+    }
+  };
 
   window.Cloud = {
     async init() {
