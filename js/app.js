@@ -8,7 +8,71 @@
 const STORE_KEY = 'billkeeper_v1';
 // #18 補充：損壞備份用的 key（#1 修復用）
 const BACKUP_KEY = 'billkeeper_v1_corrupt_backup';
-const CURRENCY = '¥';
+// v3.20：貨幣改為動態變數，並依選定貨幣決定小數位
+let CURRENCY = '¥';
+let CUR_DECIMALS = 2;
+
+/* 世界主要貨幣表（code / 符號 / 中文名 / 英文名 / 小數位） */
+const CURRENCIES = [
+  { code: 'USD', symbol: '$',   zh: '美元',     en: 'US Dollar',         decimals: 2 },
+  { code: 'EUR', symbol: '€',   zh: '歐元',     en: 'Euro',              decimals: 2 },
+  { code: 'JPY', symbol: '¥',   zh: '日圓',     en: 'Japanese Yen',      decimals: 0 },
+  { code: 'GBP', symbol: '£',   zh: '英鎊',     en: 'British Pound',     decimals: 2 },
+  { code: 'CNY', symbol: '¥',   zh: '人民幣',   en: 'Chinese Yuan',      decimals: 2 },
+  { code: 'TWD', symbol: 'NT$', zh: '新台幣',   en: 'New Taiwan Dollar', decimals: 2 },
+  { code: 'HKD', symbol: 'HK$', zh: '港幣',     en: 'Hong Kong Dollar',  decimals: 2 },
+  { code: 'KRW', symbol: '₩',   zh: '韓圓',     en: 'South Korean Won',  decimals: 0 },
+  { code: 'AUD', symbol: 'A$',  zh: '澳幣',     en: 'Australian Dollar', decimals: 2 },
+  { code: 'CAD', symbol: 'C$',  zh: '加幣',     en: 'Canadian Dollar',   decimals: 2 },
+  { code: 'CHF', symbol: 'Fr',  zh: '瑞士法郎', en: 'Swiss Franc',       decimals: 2 },
+  { code: 'SGD', symbol: 'S$',  zh: '新加坡幣', en: 'Singapore Dollar',  decimals: 2 },
+  { code: 'THB', symbol: '฿',   zh: '泰銖',     en: 'Thai Baht',         decimals: 2 },
+  { code: 'MYR', symbol: 'RM',  zh: '馬來西亞令吉', en: 'Malaysian Ringgit', decimals: 2 },
+  { code: 'PHP', symbol: '₱',   zh: '菲律賓披索', en: 'Philippine Peso', decimals: 2 },
+  { code: 'IDR', symbol: 'Rp',  zh: '印尼盾',   en: 'Indonesian Rupiah', decimals: 0 },
+  { code: 'INR', symbol: '₹',   zh: '印度盧比', en: 'Indian Rupee',      decimals: 2 },
+  { code: 'NZD', symbol: 'NZ$', zh: '紐西蘭幣', en: 'New Zealand Dollar', decimals: 2 },
+  { code: 'SEK', symbol: 'kr',  zh: '瑞典克朗', en: 'Swedish Krona',     decimals: 2 },
+  { code: 'NOK', symbol: 'kr',  zh: '挪威克朗', en: 'Norwegian Krone',   decimals: 2 },
+  { code: 'DKK', symbol: 'kr',  zh: '丹麥克朗', en: 'Danish Krone',       decimals: 2 },
+  { code: 'BRL', symbol: 'R$',  zh: '巴西雷亞爾', en: 'Brazilian Real',  decimals: 2 },
+  { code: 'MXN', symbol: '$',   zh: '墨西哥披索', en: 'Mexican Peso',    decimals: 2 },
+  { code: 'ZAR', symbol: 'R',   zh: '南非蘭特', en: 'South African Rand', decimals: 2 },
+  { code: 'RUB', symbol: '₽',   zh: '俄羅斯盧布', en: 'Russian Ruble',    decimals: 2 },
+];
+function getCurrencyMeta(code) { return CURRENCIES.find(c => c.code === code) || null; }
+// v3.20：依使用者所在地區（瀏覽器 locale）自動選取對應貨幣
+function detectDefaultCurrency() {
+  try {
+    const c = new Intl.NumberFormat(navigator.language || 'en-US').resolvedOptions().currency;
+    if (getCurrencyMeta(c)) return c;
+  } catch (_) { /* ignore */ }
+  const loc = (navigator.language || 'en-US').toLowerCase();
+  if (loc.startsWith('zh-tw') || loc.startsWith('zh-hant')) return 'TWD';
+  if (loc.startsWith('zh')) return 'CNY';
+  if (loc.startsWith('ja')) return 'JPY';
+  if (loc.startsWith('ko')) return 'KRW';
+  if (loc.startsWith('en-gb')) return 'GBP';
+  if (loc.startsWith('en')) return 'USD';
+  if (loc.startsWith('de') || loc.startsWith('fr') || loc.startsWith('es') || loc.startsWith('it') || loc.startsWith('nl') || loc.startsWith('pt')) return 'EUR';
+  return 'USD';
+}
+function applyCurrency() {
+  const meta = getCurrencyMeta(DB.settings.currency) || CURRENCIES[0];
+  CURRENCY = meta.symbol;
+  CUR_DECIMALS = meta.decimals;
+}
+// 切換貨幣：更新全域符號/小數位 → 存檔 → 刷新選擇器與所有金額顯示
+function setCurrency(code) {
+  const meta = getCurrencyMeta(code);
+  if (!meta) return;
+  CURRENCY = meta.symbol;
+  CUR_DECIMALS = meta.decimals;
+  DB.settings.currency = code;
+  if (!save()) return;          // #8 修復：儲存失敗不套用
+  renderCurrencyPicker();
+  render();
+}
 
 const EXPENSE_CATS = [
   { name: '水電費', icon: '💡' },
@@ -44,7 +108,7 @@ const ACCOUNT_META = {
 const CHART_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#f59e0b', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#14b8a6', '#6366f1', '#a855f7', '#eab308', '#64748b'];
 
 /* ---------- 版本資訊 ---------- */
-const APP_VERSION = 'yu-v3.19';
+const APP_VERSION = 'yu-v3.20';
 const APP_BUILD_DATE = '2026-07-20';
 
 /* ---------- 工具 ---------- */
@@ -57,7 +121,8 @@ const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${Stri
 // 以本地時區把 Date 轉成 YYYY-MM-DD（不要用 toISOString，否則 GMT+8 會跨日）
 function isoLocal(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
 const monthKey = d => (d || todayISO()).slice(0, 7);
-const fmtMoney = n => CURRENCY + (n < 0 ? '-' : '') + Math.abs(Number(n) || 0).toLocaleString('zh-TW', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+// v3.20：依選定貨幣的小數位格式化（JPY/KRW 不顯示小數，其餘 2 位）
+const fmtMoney = n => CURRENCY + (n < 0 ? '-' : '') + Math.abs(Number(n) || 0).toLocaleString('zh-TW', { minimumFractionDigits: CUR_DECIMALS, maximumFractionDigits: CUR_DECIMALS });
 const fmtDate = d => { const dt = new Date(d + 'T00:00:00'); return `${dt.getMonth() + 1}/${dt.getDate()}`; };
 const escapeHtml = s => String(s ?? '').replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
 
@@ -97,6 +162,11 @@ function load() {
   }
   // 確保所有陣列存在
   DB.accounts ||= []; DB.txns ||= []; DB.bills ||= []; DB.members ||= [];
+  // v3.20：貨幣設定（首次使用依地區自動選取，之後以使用者選擇為準）
+  DB.settings ||= {};
+  const savedCode = DB.settings.currency;
+  DB.settings.currency = getCurrencyMeta(savedCode) ? savedCode : detectDefaultCurrency();
+  applyCurrency();
   _balanceDirty = true;
 }
 // #8 修復：save() 回傳 boolean，讓呼叫方能判斷是否成功
@@ -267,7 +337,7 @@ function txnRowHtml(t) {
       <div class="txn-cat">${escapeHtml(t.category)}</div>
       <div class="txn-meta">${fmtDate(t.date)} · ${acc ? escapeHtml(acc.name) : '未知帳戶'}${t.note ? ' · ' + escapeHtml(t.note) : ''}${payerHtml(t)}${sp ? ' · ' + escapeHtml(sp) : ''}</div>
     </div>
-    <div class="txn-amount ${t.type}">${t.type === 'income' ? '+' : '-'}${fmtMoney(t.amount).replace(CURRENCY, CURRENCY)}</div>
+    <div class="txn-amount ${t.type}">${t.type === 'income' ? '+' : '-'}${fmtMoney(t.amount)}</div>
   </div>`;
 }
 // 交易列上的「付款人」標籤
@@ -436,6 +506,58 @@ function renderStats() {
 /* =========================================================
    帳戶
    ========================================================= */
+/* =========================================================
+   貨幣選擇器（v3.20 新增）
+   ========================================================= */
+function renderCurrencyPicker() {
+  const meta = getCurrencyMeta(DB.settings.currency) || CURRENCIES[0];
+  $('#curSymbol').textContent = meta.symbol;
+  $('#curCode').textContent = meta.code;
+  $('#curName').textContent = meta.zh + (meta.en && meta.en !== meta.zh ? ' · ' + meta.en : '');
+  const region = detectDefaultCurrency();
+  $('#curHint').textContent = (meta.code === region)
+    ? `已依你所在地區自動選取（${meta.code}）。切換後立即更新所有金額顯示。`
+    : `目前為 ${meta.code}。可隨時切換，所有金額將即時以新貨幣顯示。`;
+  renderCurList('');
+}
+// 依關鍵字（貨幣代碼 / 中文名 / 英文名）過濾清單，支援代碼快速定位
+function renderCurList(q) {
+  const list = $('#curList');
+  const kw = (q || '').trim().toLowerCase();
+  const items = CURRENCIES.filter(c =>
+    !kw ||
+    c.code.toLowerCase().includes(kw) ||
+    c.zh.toLowerCase().includes(kw) ||
+    (c.en && c.en.toLowerCase().includes(kw))
+  );
+  list.innerHTML = items.length
+    ? items.map(c => `<button type="button" class="cur-opt ${c.code === DB.settings.currency ? 'active' : ''}" data-cur="${c.code}">
+        <span class="cur-sym">${c.symbol}</span>
+        <span class="cur-opt-text"><span class="cur-opt-code">${c.code}</span><span class="cur-opt-name">${c.zh}</span></span>
+      </button>`).join('')
+    : '<div class="empty">找不到相符的貨幣</div>';
+}
+function bindCurrencyPicker() {
+  const trigger = $('#curTrigger');
+  const pop = $('#curPop');
+  trigger.addEventListener('click', () => {
+    pop.hidden = !pop.hidden;
+    if (!pop.hidden) { $('#curSearch').value = ''; renderCurList(''); setTimeout(() => $('#curSearch').focus(), 30); }
+  });
+  $('#curSearch').addEventListener('input', e => renderCurList(e.target.value));
+  // 事件委託：選取某貨幣
+  $('#curList').addEventListener('click', e => {
+    const opt = e.target.closest('[data-cur]');
+    if (!opt) return;
+    pop.hidden = true;
+    setCurrency(opt.dataset.cur);
+  });
+  // 點擊選擇器外部時收起彈出層
+  document.addEventListener('click', e => {
+    if (!pop.hidden && !e.target.closest('#curPicker')) pop.hidden = true;
+  });
+}
+
 function renderAccounts() {
   const el = $('#accountsList');
   el.innerHTML = DB.accounts.map(a => {
@@ -459,6 +581,7 @@ function renderAccounts() {
   renderMembers();
   renderMemberSplit();
   renderMemberContrib();
+  renderCurrencyPicker();
   if (window.Cloud) Cloud.refreshUI();
 }
 
@@ -1466,7 +1589,7 @@ function exportCSV() {
 }
 
 // #9 修復：匯入 schema 白名單校驗，攔截 prototype pollution 與欄位缺失
-const IMPORT_ALLOWED_TOP_KEYS = ['accounts', 'txns', 'bills', 'members'];
+const IMPORT_ALLOWED_TOP_KEYS = ['accounts', 'txns', 'bills', 'members', 'settings'];
 const TXN_REQUIRED_FIELDS = ['id', 'type', 'amount', 'date'];
 const TXN_ALLOWED_FIELDS = ['id', 'type', 'amount', 'date', 'category', 'accountId', 'note', 'createdAt', 'paidBy', '_fromBill', 'splitMode', 'shares'];
 const ACC_ALLOWED_FIELDS = ['id', 'name', 'type', 'balance', 'note'];
@@ -1661,6 +1784,9 @@ function bindMiscEvents() {
   $('#reminderBtn').addEventListener('click', () => { switchView('bills'); billFilter = 'unpaid'; $$('.seg[data-billfilter]').forEach(x => x.classList.toggle('active', x.dataset.billfilter === 'unpaid')); renderBills(); });
 
   window.addEventListener('resize', () => { if (currentView === 'stats') renderStats(); if (currentView === 'dashboard') renderDashboard(); });
+
+  // v3.20：貨幣選擇器綁定
+  bindCurrencyPicker();
 }
 
 // #20 修復：bindEvents 拆分為子函數
@@ -1722,6 +1848,7 @@ function init() {
   fillAccountSelect($('#filterAccount'), '', true);
   fillMemberSelect($('#filterPaidBy'), '', true);
   bindEvents();
+  renderCurrencyPicker();
   switchView('dashboard');
   // 雲端模組（處理 OAuth 回跳、綁定 UI）
   if (window.Cloud) Cloud.init();

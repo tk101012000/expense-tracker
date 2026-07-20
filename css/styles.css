@@ -343,3 +343,45 @@ canvas { display: block; width: 100% !important; }
   body { font-size: 16px; }
   #main { padding-left: 18px; padding-right: 18px; }
 }
+
+/* ---------- v3.20 貨幣選擇器 ---------- */
+.cur-card { margin-bottom: 16px; }
+.cur-picker { position: relative; }
+.cur-trigger {
+  width: 100%; display: flex; align-items: center; gap: 12px;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px;
+  padding: 12px 14px; font-size: 15px; cursor: pointer; color: var(--text); text-align: left;
+}
+.cur-trigger:active { background: var(--surface); }
+.cur-sym-box {
+  width: 40px; height: 40px; flex: none; border-radius: 10px;
+  background: var(--primary); color: #fff; font-weight: 700; font-size: 17px;
+  display: flex; align-items: center; justify-content: center;
+}
+.cur-trigger-text { display: flex; flex-direction: column; line-height: 1.25; flex: 1; min-width: 0; }
+.cur-code { font-weight: 700; font-size: 15px; }
+.cur-name { font-size: 12px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cur-caret { color: var(--text-3); font-size: 12px; flex: none; }
+.cur-pop {
+  position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 60;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+  box-shadow: var(--shadow-lg); padding: 10px; max-height: 320px; display: flex; flex-direction: column;
+}
+.cur-search {
+  width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid var(--border);
+  border-radius: 10px; font-size: 14px; background: var(--surface-2); color: var(--text); margin-bottom: 8px;
+}
+.cur-search:focus { outline: 2px solid var(--primary); border-color: transparent; }
+.cur-list { overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding-right: 2px; }
+.cur-opt {
+  display: flex; align-items: center; gap: 10px; padding: 9px 10px; border: none; background: none;
+  border-radius: 10px; cursor: pointer; text-align: left; color: var(--text); font-size: 14px; width: 100%;
+}
+.cur-opt:hover, .cur-opt:focus { background: var(--surface-2); }
+.cur-opt.active { background: var(--surface-2); box-shadow: inset 3px 0 0 var(--primary); }
+.cur-sym { width: 30px; height: 30px; flex: none; border-radius: 8px; background: var(--surface-2); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; }
+.cur-opt.active .cur-sym { background: var(--primary); color: #fff; }
+.cur-opt-text { display: flex; flex-direction: column; line-height: 1.2; }
+.cur-opt-code { font-weight: 700; font-size: 14px; }
+.cur-opt-name { font-size: 12px; color: var(--text-3); }
+

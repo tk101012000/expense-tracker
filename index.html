@@ -181,6 +181,25 @@
 
       <!-- ============ 帳戶 ============ -->
       <section class="view" data-view="accounts" hidden>
+        <!-- v3.20 貨幣偏好卡 -->
+        <div class="card cur-card">
+          <div class="card-head"><h2>💱 貨幣單位</h2></div>
+          <div class="cur-picker" id="curPicker">
+            <button type="button" class="cur-trigger" id="curTrigger">
+              <span class="cur-sym-box" id="curSymbol">¥</span>
+              <span class="cur-trigger-text">
+                <span id="curCode" class="cur-code"></span>
+                <span id="curName" class="cur-name"></span>
+              </span>
+              <span class="cur-caret">▾</span>
+            </button>
+            <div class="cur-pop" id="curPop" hidden>
+              <input type="text" id="curSearch" class="cur-search" placeholder="搜尋貨幣名稱或代碼，例如 USD / 日圓" autocomplete="off" />
+              <div class="cur-list" id="curList"></div>
+            </div>
+          </div>
+          <p class="hint-text" id="curHint"></p>
+        </div>
         <div id="accountsList" class="account-list"></div>
         <button class="fab secondary" id="addAccountBtn">＋ 新增帳戶</button>
         <div class="card" style="margin-top:16px">
@@ -272,7 +291,7 @@
             <button class="ghost-btn" id="cloudDownloadBtn" disabled>下載還原</button>
             <button class="danger-btn" id="cloudDisconnectBtn" disabled>斷線</button>
           </div>
-          <p class="hint-text" id="cloudStatus" style="margin-top:10px">尚未連接 <small style="color:#999">[yu-v3.19]</small></p>
+          <p class="hint-text" id="cloudStatus" style="margin-top:10px">尚未連接 <small style="color:#999">[yu-v3.20]</small></p>
           <p class="hint-text">備份內容為完整資料（帳戶／交易／繳費）的 JSON，儲存於你的雲端硬碟私人空間；採用客戶端 OAuth（PKCE），不經過任何第三方伺服器。</p>
         </div>
       </section>
@@ -517,6 +536,6 @@
   <div id="toast" class="toast" hidden></div>
 
   <script src="js/cloud.js?v=yu-3.17"></script>
-  <script src="js/app.js?v=yu-3.19"></script>
+  <script src="js/app.js?v=yu-3.20"></script>
 </body>
 </html>
