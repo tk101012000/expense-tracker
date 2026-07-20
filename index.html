@@ -272,7 +272,7 @@
             <button class="ghost-btn" id="cloudDownloadBtn" disabled>下載還原</button>
             <button class="danger-btn" id="cloudDisconnectBtn" disabled>斷線</button>
           </div>
-          <p class="hint-text" id="cloudStatus" style="margin-top:10px">尚未連接 <small style="color:#999">[yu-v3.18]</small></p>
+          <p class="hint-text" id="cloudStatus" style="margin-top:10px">尚未連接 <small style="color:#999">[yu-v3.19]</small></p>
           <p class="hint-text">備份內容為完整資料（帳戶／交易／繳費）的 JSON，儲存於你的雲端硬碟私人空間；採用客戶端 OAuth（PKCE），不經過任何第三方伺服器。</p>
         </div>
       </section>
@@ -323,6 +323,24 @@
         <label class="field">付款人（誰付錢）
           <select id="txnPaidBy"><option value="">未指定</option></select>
         </label>
+        <div id="txnSplitWrap">
+          <label class="field field-toggle">
+            <span>多人分擔（此筆由多人分攤）</span>
+            <input type="checkbox" id="txnSplitOn" />
+          </label>
+          <div class="split-editor" id="txnSplitBox" hidden>
+            <div class="seg-tabs" id="txnSplitMode">
+              <button type="button" class="seg active" data-mode="equal">平均分攤</button>
+              <button type="button" class="seg" data-mode="ratio">自訂比例</button>
+            </div>
+            <div id="txnSplitParts" class="split-parts"></div>
+            <div class="split-editor-actions">
+              <button type="button" class="ghost-btn small" id="txnSplitAdd">＋ 加入分擔人</button>
+              <button type="button" class="ghost-btn small" id="txnSplitFromMembers">從成員匯入</button>
+            </div>
+            <div class="pill" id="txnSplitValidation"></div>
+          </div>
+        </div>
         <label class="field">備註
           <input type="text" id="txnNote" maxlength="60" placeholder="選填，最多 60 字" />
         </label>
@@ -406,6 +424,24 @@
         <label class="field">備註
           <input type="text" id="billNote" maxlength="40" placeholder="選填" />
         </label>
+        <div id="billSplitWrap">
+          <label class="field field-toggle">
+            <span>多人分擔（此筆由多人分攤）</span>
+            <input type="checkbox" id="billSplitOn" />
+          </label>
+          <div class="split-editor" id="billSplitBox" hidden>
+            <div class="seg-tabs" id="billSplitMode">
+              <button type="button" class="seg active" data-mode="equal">平均分攤</button>
+              <button type="button" class="seg" data-mode="ratio">自訂比例</button>
+            </div>
+            <div id="billSplitParts" class="split-parts"></div>
+            <div class="split-editor-actions">
+              <button type="button" class="ghost-btn small" id="billSplitAdd">＋ 加入分擔人</button>
+              <button type="button" class="ghost-btn small" id="billSplitFromMembers">從成員匯入</button>
+            </div>
+            <div class="pill" id="billSplitValidation"></div>
+          </div>
+        </div>
         <label class="field field-toggle">
           <span>標記為已繳</span>
           <input type="checkbox" id="billPaidNow" />
@@ -481,6 +517,6 @@
   <div id="toast" class="toast" hidden></div>
 
   <script src="js/cloud.js?v=yu-3.17"></script>
-  <script src="js/app.js?v=yu-3.18"></script>
+  <script src="js/app.js?v=yu-3.19"></script>
 </body>
 </html>

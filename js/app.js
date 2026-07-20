@@ -44,7 +44,7 @@ const ACCOUNT_META = {
 const CHART_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#f59e0b', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#14b8a6', '#6366f1', '#a855f7', '#eab308', '#64748b'];
 
 /* ---------- 版本資訊 ---------- */
-const APP_VERSION = 'yu-v3.18';
+const APP_VERSION = 'yu-v3.19';
 const APP_BUILD_DATE = '2026-07-20';
 
 /* ---------- 工具 ---------- */
@@ -260,11 +260,12 @@ function renderDashboard() {
 function txnRowHtml(t) {
   const acc = DB.accounts.find(a => a.id === t.accountId);
   const icon = CAT_ICON[t.category] || '📦';
+  const sp = splitText(t);
   return `<div class="txn-item" data-txn="${t.id}">
     <div class="txn-icon">${icon}</div>
     <div class="txn-main">
       <div class="txn-cat">${escapeHtml(t.category)}</div>
-      <div class="txn-meta">${fmtDate(t.date)} · ${acc ? escapeHtml(acc.name) : '未知帳戶'}${t.note ? ' · ' + escapeHtml(t.note) : ''}${payerHtml(t)}</div>
+      <div class="txn-meta">${fmtDate(t.date)} · ${acc ? escapeHtml(acc.name) : '未知帳戶'}${t.note ? ' · ' + escapeHtml(t.note) : ''}${payerHtml(t)}${sp ? ' · ' + escapeHtml(sp) : ''}</div>
     </div>
     <div class="txn-amount ${t.type}">${t.type === 'income' ? '+' : '-'}${fmtMoney(t.amount).replace(CURRENCY, CURRENCY)}</div>
   </div>`;
@@ -353,6 +354,7 @@ function renderBills() {
       <div class="bill-main">
         <div class="bill-name">${escapeHtml(b.name)}</div>
         <div class="bill-sub">${b.cycle ? cycleTxt[b.cycle] : '未設定期'} · ${b.occ.dueISO ? `到期 ${b.occ.dueISO}` : '未設到期日'} · ${acc ? escapeHtml(acc.name) : (b.accountId ? '' : '未指定帳戶')}</div>
+        ${splitText(b) ? `<div class="bill-sub" style="color:var(--text-3);margin-top:3px">分擔：${escapeHtml(splitText(b))}</div>` : ''}
         <div style="margin-top:6px">${tag}</div>
       </div>
       <div class="bill-actions">
@@ -560,6 +562,151 @@ function fillFilterCategory() {
 }
 
 /* =========================================================
+   分擔編輯器（記帳 / 繳費共用）  yu-v3.19
+   資料結構（存於 txn / bill 物件上）：
+     splitMode: 'none' | 'equal' | 'ratio'
+     shares:    [{ memberId, ratio }]   ratio 僅 ratio 模式有意義（百分比 0-100）
+   說明：splitMode='none' 時等同既有「單一付款人」行為；'equal'/'ratio' 表示此筆由多人分攤。
+   ========================================================= */
+let txnSplit = { on: false, mode: 'equal', parts: [] };
+let billSplit = { on: false, mode: 'equal', parts: [] };
+
+// 各模態對應的 DOM id（total 為取得總金額的函式，供即時預覽用）
+const TXN_SPLIT_IDS = {
+  on: 'txnSplitOn', box: 'txnSplitBox', mode: 'txnSplitMode', parts: 'txnSplitParts',
+  validation: 'txnSplitValidation', add: 'txnSplitAdd', fromMembers: 'txnSplitFromMembers',
+  total: () => $('#txnAmount').value,
+};
+const BILL_SPLIT_IDS = {
+  on: 'billSplitOn', box: 'billSplitBox', mode: 'billSplitMode', parts: 'billSplitParts',
+  validation: 'billSplitValidation', add: 'billSplitAdd', fromMembers: 'billSplitFromMembers',
+  total: () => $('#billAmount').value,
+};
+
+// 由交易/繳費物件載入分擔狀態
+function splitEditorLoad(state, obj) {
+  state.on = !!(obj && obj.splitMode && obj.splitMode !== 'none');
+  state.mode = (obj && obj.splitMode === 'ratio') ? 'ratio' : 'equal';
+  state.parts = (obj && Array.isArray(obj.shares))
+    ? obj.shares.map(s => ({ id: ++_splitSeq, memberId: s.memberId || '', ratio: Number(s.ratio) || 0 }))
+    : [];
+}
+function splitEditorReset(state) { state.on = false; state.mode = 'equal'; state.parts = []; }
+
+// 轉回儲存格式；allow=false（如收入）強制 none
+function splitEditorToData(state, allow) {
+  if (!state.on || !allow) return { splitMode: 'none', shares: [] };
+  const validParts = state.parts.filter(p => p.memberId);
+  if (validParts.length === 0) return { splitMode: 'none', shares: [] };
+  return {
+    splitMode: state.mode,
+    shares: validParts.map(p => ({
+      memberId: p.memberId,
+      ratio: state.mode === 'ratio' ? (Number(p.ratio) || 0) : 0,
+    })),
+  };
+}
+
+// 計算每人分擔金額（含尾差給最後一人，確保合計精確等於總額）
+function computeSplitAmounts(total, splitMode, shares) {
+  const totalAmt = Math.round((Number(total) || 0) * 100) / 100;
+  if (!shares || !shares.length) return [];
+  const nameOf = id => { const m = DB.members.find(x => x.id === id); return m ? m.name : '未指定'; };
+  let arr;
+  if (splitMode === 'equal') {
+    const n = shares.length;
+    const each = Math.round((totalAmt / n) * 100) / 100;
+    arr = shares.map(s => ({ memberId: s.memberId, name: nameOf(s.memberId), ratio: Math.round((100 / n) * 10) / 10, amount: each }));
+  } else { // ratio
+    arr = shares.map(s => ({
+      memberId: s.memberId, name: nameOf(s.memberId),
+      ratio: Math.round((Number(s.ratio) || 0) * 10) / 10,
+      amount: Math.round(totalAmt * (Number(s.ratio) || 0) / 100 * 100) / 100,
+    }));
+  }
+  if (arr.length) {
+    const sum = arr.reduce((a, r) => a + r.amount, 0);
+    arr[arr.length - 1].amount = Math.round((arr[arr.length - 1].amount + (totalAmt - sum)) * 100) / 100;
+  }
+  return arr;
+}
+
+// 列表/匯出用的分擔文字（名稱已 escapeHtml 防 XSS）
+function splitText(obj) {
+  if (!obj || !obj.splitMode || obj.splitMode === 'none' || !Array.isArray(obj.shares) || !obj.shares.length) return '';
+  const amts = computeSplitAmounts(obj.amount, obj.splitMode, obj.shares);
+  if (!amts.length) return '';
+  const parts = amts.map(a => `${escapeHtml(a.name)} ${fmtMoney(a.amount)}`).join('、');
+  return (obj.splitMode === 'ratio' ? '依比例分擔：' : '平均分擔：') + parts;
+}
+
+// 渲染分擔編輯器（記帳/繳費共用）
+function splitEditorRender(state, ids, totalGetter) {
+  const box = $('#' + ids.box);
+  if (!state.on) { box.hidden = true; return; }
+  box.hidden = false;
+  $$('#' + ids.mode + ' .seg').forEach(s => s.classList.toggle('active', s.dataset.mode === state.mode));
+  const pe = $('#' + ids.parts);
+  const total = Number(totalGetter()) || 0;
+  pe.innerHTML = state.parts.length ? state.parts.map(p => {
+    const opts = '<option value="">選擇成員</option>' + DB.members.map(m =>
+      `<option value="${m.id}" ${m.id === p.memberId ? 'selected' : ''}>${escapeHtml(m.name)}</option>`).join('');
+    return `<div class="split-part-row" data-part="${p.id}">
+      <select class="split-part-member" data-part-member="${p.id}">${opts}</select>
+      ${state.mode === 'ratio' ? `<input type="number" class="split-part-ratio" data-part-ratio="${p.id}" value="${p.ratio || ''}" step="0.1" min="0" placeholder="比例 %" inputmode="decimal" />` : ''}
+      <button type="button" class="icon-btn split-part-del" data-part-del="${p.id}" title="移除">✕</button>
+    </div>`;
+  }).join('') : '<div class="empty" style="padding:8px 4px;font-size:13px">尚無分擔人，點下方「加入分擔人」</div>';
+  const v = $('#' + ids.validation);
+  if (state.parts.length === 0) { v.className = 'pill warn'; v.textContent = '請加入至少 1 位分擔人'; }
+  else if (state.mode === 'ratio') {
+    const sum = state.parts.reduce((s, p) => s + (Number(p.ratio) || 0), 0);
+    const okPct = Math.round(sum * 10) / 10 === 100;
+    v.className = okPct ? 'pill ok' : 'pill warn';
+    v.textContent = `比例合計 ${Math.round(sum * 10) / 10}%（${okPct ? '金額分攤 ' + fmtMoney(total) : '需為 100%'}${okPct ? '' : ''}）`;
+  } else {
+    v.className = 'pill ok';
+    v.textContent = `平均分攤 ${state.parts.length} 人（每人 ${fmtMoney(state.parts.length ? total / state.parts.length : 0)}）`;
+  }
+}
+
+// 綁定分擔編輯器事件（記帳/繳費各呼叫一次）
+function bindSplitEditor(state, ids) {
+  $('#' + ids.on).addEventListener('change', () => {
+    state.on = $('#' + ids.on).checked;
+    if (state.on && state.parts.length === 0) {
+      state.parts = [{ id: ++_splitSeq, memberId: '', ratio: 0 }, { id: ++_splitSeq, memberId: '', ratio: 0 }];
+    }
+    splitEditorRender(state, ids, ids.total);
+  });
+  $$('#' + ids.mode + ' .seg').forEach(s => s.addEventListener('click', () => {
+    state.mode = s.dataset.mode; splitEditorRender(state, ids, ids.total);
+  }));
+  $('#' + ids.add).addEventListener('click', () => {
+    state.parts.push({ id: ++_splitSeq, memberId: '', ratio: 0 }); splitEditorRender(state, ids, ids.total);
+  });
+  $('#' + ids.fromMembers).addEventListener('click', () => {
+    state.parts = DB.members.map(m => ({ id: ++_splitSeq, memberId: m.id, ratio: 0 })); splitEditorRender(state, ids, ids.total);
+  });
+  const pe = $('#' + ids.parts);
+  pe.addEventListener('change', e => {
+    const row = e.target.closest('[data-part]'); if (!row) return;
+    const pid = Number(row.dataset.part);
+    const p = state.parts.find(x => x.id === pid); if (!p) return;
+    if (e.target.dataset.partMember !== undefined) p.memberId = e.target.value;
+    if (e.target.dataset.partRatio !== undefined) p.ratio = Number(e.target.value) || 0;
+    splitEditorRender(state, ids, ids.total);
+  });
+  pe.addEventListener('click', e => {
+    if (e.target.dataset.partDel !== undefined) {
+      const pid = Number(e.target.dataset.partDel);
+      state.parts = state.parts.filter(x => x.id !== pid);
+      splitEditorRender(state, ids, ids.total);
+    }
+  });
+}
+
+/* =========================================================
    交易彈窗
    ========================================================= */
 let txnType = 'expense', editTxnId = null;
@@ -590,6 +737,11 @@ function openTxnModal(id) {
     fillAccountSelect($('#txnAccount'), DB.accounts[0] && DB.accounts[0].id);
     fillMemberSelect($('#txnPaidBy'), DB.members[0] ? DB.members[0].id : '', false);
   }
+  // 載入分擔狀態（收入不支援分擔，隱藏編輯器）
+  splitEditorLoad(txnSplit, id ? DB.txns.find(x => x.id === id) : null);
+  $('#txnSplitOn').checked = txnSplit.on;
+  $('#txnSplitWrap').style.display = (txnType === 'expense') ? '' : 'none';
+  splitEditorRender(txnSplit, TXN_SPLIT_IDS, TXN_SPLIT_IDS.total);
   modal.hidden = false;
 }
 function setTxnType(type) {
@@ -597,6 +749,9 @@ function setTxnType(type) {
   $$('.tt-btn').forEach(b => b.classList.toggle('active', b.dataset.ttype === type));
   const cur = $('#txnCategory').value;
   fillCategorySelect($('#txnCategory'), type, cur);
+  // 收入不支援多人分擔，切到收入時隱藏編輯器
+  const wrap = $('#txnSplitWrap');
+  if (wrap) wrap.style.display = (type === 'expense') ? '' : 'none';
 }
 function clearErr(ids) { ids.forEach(i => ($('#' + i).textContent = '')); }
 
@@ -616,6 +771,8 @@ function saveTxn(e) {
     type: txnType, amount: Math.round(amount * 100) / 100, date,
     category: $('#txnCategory').value, accountId: $('#txnAccount').value,
     note: $('#txnNote').value.trim(), paidBy: paidBy || '',
+    // 收入不支援分擔；支出才帶 splitMode/shares
+    ...splitEditorToData(txnSplit, txnType === 'expense'),
   };
   if (editTxnId) {
     // #7 修復：find 守衛
@@ -1195,6 +1352,10 @@ function openBillModal(id) {
     $('#billCycle').value = ''; $('#billDue').value = ''; $('#billNote').value = '';
     $('#billPaidNow').checked = false;
   }
+  // 載入分擔狀態（繳費恆為支出，必定支援分擔）
+  splitEditorLoad(billSplit, id ? DB.bills.find(x => x.id === id) : null);
+  $('#billSplitOn').checked = billSplit.on;
+  splitEditorRender(billSplit, BILL_SPLIT_IDS, BILL_SPLIT_IDS.total);
   $('#billModal').hidden = false;
 }
 function saveBill(e) {
@@ -1215,6 +1376,8 @@ function saveBill(e) {
     cycle: $('#billCycle').value || null,
     dueDate: $('#billDue').value || null,
     note: $('#billNote').value.trim(),
+    // 繳費恆為支出，必定支援分擔
+    ...splitEditorToData(billSplit, true),
   };
   if (editBillId) {
     // #7 修復：find 守衛
@@ -1293,9 +1456,9 @@ function csvCell(v) {
 function exportCSV() {
   const accName = id => { const a = DB.accounts.find(x => x.id === id); return a ? a.name : ''; };
   const payerName = id => { if (!id) return ''; const m = DB.members.find(x => x.id === id); return m ? m.name : ''; };
-  const header = ['日期', '類型', '類別', '金額', '帳戶', '付款人', '備註'];
+  const header = ['日期', '類型', '類別', '金額', '帳戶', '付款人', '分擔', '備註'];
   const rows = [...DB.txns].sort((a, b) => a.date.localeCompare(b.date)).map(t =>
-    [t.date, t.type === 'income' ? '收入' : '支出', t.category, t.amount, accName(t.accountId), payerName(t.paidBy), (t.note || '')]
+    [t.date, t.type === 'income' ? '收入' : '支出', t.category, t.amount, accName(t.accountId), payerName(t.paidBy), splitText(t), (t.note || '')]
       .map(csvCell).join(','));
   const csv = '\uFEFF' + [header.join(','), ...rows].join('\r\n'); // BOM 供 Excel 正確辨識中文
   download(`繳費記帳_${todayISO()}.csv`, csv, 'text/csv;charset=utf-8');
@@ -1305,9 +1468,9 @@ function exportCSV() {
 // #9 修復：匯入 schema 白名單校驗，攔截 prototype pollution 與欄位缺失
 const IMPORT_ALLOWED_TOP_KEYS = ['accounts', 'txns', 'bills', 'members'];
 const TXN_REQUIRED_FIELDS = ['id', 'type', 'amount', 'date'];
-const TXN_ALLOWED_FIELDS = ['id', 'type', 'amount', 'date', 'category', 'accountId', 'note', 'createdAt', 'paidBy', '_fromBill'];
+const TXN_ALLOWED_FIELDS = ['id', 'type', 'amount', 'date', 'category', 'accountId', 'note', 'createdAt', 'paidBy', '_fromBill', 'splitMode', 'shares'];
 const ACC_ALLOWED_FIELDS = ['id', 'name', 'type', 'balance', 'note'];
-const BILL_ALLOWED_FIELDS = ['id', 'name', 'amount', 'category', 'accountId', 'cycle', 'dueDate', 'note', 'paid'];
+const BILL_ALLOWED_FIELDS = ['id', 'name', 'amount', 'category', 'accountId', 'cycle', 'dueDate', 'note', 'paid', 'splitMode', 'shares'];
 const MEMBER_ALLOWED_FIELDS = ['id', 'name'];
 
 /** 清理物件，只保留白名單 key，過濾 __proto__/constructor */
@@ -1541,6 +1704,8 @@ function bindEvents() {
   bindMiscEvents();
   bindSplitCalcEvents();
   bindContribEvents();
+  bindSplitEditor(txnSplit, TXN_SPLIT_IDS);
+  bindSplitEditor(billSplit, BILL_SPLIT_IDS);
 }
 function shiftMonth(mk, n) {
   const [y, m] = mk.split('-').map(Number);
