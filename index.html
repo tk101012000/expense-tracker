@@ -178,7 +178,12 @@
               <select id="splitPeriod" class="mini-select">
                 <option value="all">全部</option>
                 <option value="month">本月</option>
+                <option value="custom">自訂範圍</option>
               </select>
+            </div>
+            <div id="splitRange" class="split-range" hidden>
+              <label class="range-field">起 <input type="date" id="splitStart" class="mini-input" /></label>
+              <label class="range-field">止 <input type="date" id="splitEnd" class="mini-input" /></label>
             </div>
             <div id="memberSplit" class="split-list"></div>
           </div>
@@ -422,6 +427,12 @@
           </div>
           <div id="splitResults" class="split-result-list"></div>
           <div class="split-total" id="splitResultTotal"></div>
+          <div class="split-record-row">
+            <label class="inline-field">付款人
+              <select id="splitPayer" class="mini-select"></select>
+            </label>
+            <button class="fab" id="splitRecordBtn" type="button">＋ 一鍵入帳</button>
+          </div>
         </div>
       </div>
     </div>
@@ -431,6 +442,6 @@
   <div id="toast" class="toast" hidden></div>
 
   <script src="js/cloud.js?v=3.15"></script>
-  <script src="js/app.js?v=3.15"></script>
+  <script src="js/app.js?v=3.16"></script>
 </body>
 </html>

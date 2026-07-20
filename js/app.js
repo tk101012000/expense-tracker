@@ -786,10 +786,24 @@ function renderMemberSplit() {
   const el = $('#memberSplit');
   if (!el) return;
   const period = $('#splitPeriod') ? $('#splitPeriod').value : 'all';
-  const ym = todayISO().slice(0, 7);
-  const exps = DB.txns.filter(t =>
-    t.type === 'expense' && (period === 'all' || (t.date || '').slice(0, 7) === ym)
-  );
+
+  // 自訂範圍：顯示/隱藏日期選擇器
+  const rangeEl = $('#splitRange');
+  if (rangeEl) rangeEl.hidden = period !== 'custom';
+
+  let exps;
+  if (period === 'custom') {
+    const s = $('#splitStart') ? $('#splitStart').value : '';
+    const e = $('#splitEnd') ? $('#splitEnd').value : '';
+    if (!s || !e) { el.innerHTML = '<div class="empty">請選擇起止日期範圍</div>'; return; }
+    // ISO 日期字串可直接字典序比較；含端點（閉區間）
+    exps = DB.txns.filter(t => t.type === 'expense' && (t.date || '') >= s && (t.date || '') <= e);
+  } else {
+    const ym = todayISO().slice(0, 7);
+    exps = DB.txns.filter(t =>
+      t.type === 'expense' && (period === 'all' || (t.date || '').slice(0, 7) === ym)
+    );
+  }
   const grand = exps.reduce((s, t) => s + (Number(t.amount) || 0), 0);
   if (grand <= 0) { el.innerHTML = '<div class="empty">此範圍尚無支出紀錄</div>'; return; }
 
@@ -814,8 +828,19 @@ function renderMemberSplit() {
   }).join('') + `<div class="split-total">支出合計 <strong>${fmtMoney(grand)}</strong> · ${DB.members.length} 位成員分擔</div>`;
 }
 
+// 分帳統計「範圍」切換：切到自訂時預設本月初～今天，並顯示日期選擇器
+function onSplitPeriodChange() {
+  const period = $('#splitPeriod').value;
+  if (period === 'custom') {
+    const s = $('#splitStart'), e = $('#splitEnd');
+    if (s && !s.value) s.value = todayISO().slice(0, 8) + '01';
+    if (e && !e.value) e.value = todayISO();
+  }
+  renderMemberSplit();
+}
+
 /* =========================================================
-   分擔計算機（人員分擔功能計算選項模組）  v3.15
+   分擔計算機（人員分擔功能計算選項模組）  v3.16
    需求對應：
    1) 平均分擔 / 自訂比例 兩種計算模式
    2) 可新增、移除參與人員，即時更新每人分擔金額
@@ -836,6 +861,7 @@ function openSplitCalc() {
   }
   $('#splitCalcModal').hidden = false;
   renderSplitCalc();
+  fillSplitPayer();
   setTimeout(() => $('#splitTotal').focus(), 50);
 }
 
@@ -855,6 +881,7 @@ function splitFromMembers() {
   if (!DB.members.length) { toast('尚無成員，請先到「成員」新增'); return; }
   splitCalc.parts = DB.members.map(m => ({ id: ++_splitSeq, name: m.name, ratio: 0 }));
   renderSplitCalc();
+  fillSplitPayer();
 }
 
 function splitCalcSetMode(mode) {
@@ -949,6 +976,47 @@ function renderSplitResults() {
 }
 
 function renderSplitCalc() { renderSplitParts(); renderSplitResults(); }
+
+// 填寫「付款人」下拉（依成員），並嘗試把第一位參與人員對應到成員作為預設
+function fillSplitPayer() {
+  const sel = $('#splitPayer');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">未指定</option>' + DB.members.map(m => `<option value="${m.id}">${escapeHtml(m.name)}</option>`).join('');
+  const first = splitCalc.parts.find(p => p.name.trim());
+  let def = '';
+  if (first) {
+    const m = DB.members.find(x => x.name === first.name.trim());
+    if (m) def = m.id;
+  }
+  sel.value = def || (DB.members[0] ? DB.members[0].id : '');
+}
+
+// 將分擔結果一鍵變成「誰付錢」支出交易，直接入帳
+function recordSplitTxn() {
+  const { rows, sumRatio, totalValid } = splitCalcCompute();
+  const total = Math.round((parseFloat(splitCalc.total) || 0) * 100) / 100;
+  if (!totalValid || !(total > 0)) { toast('請先輸入有效的總金額'); return; }
+  if (splitCalc.mode === 'ratio' && sumRatio !== 100) { toast('比例合計需為 100% 才能入帳'); return; }
+  if (!rows.length) { toast('請先新增參與人員'); return; }
+
+  const paidBy = $('#splitPayer') ? ($('#splitPayer').value || '') : '';
+  const breakdown = rows.map(r => `${r.name} ${Math.round(r.ratioPct * 10) / 10}% ${fmtMoney(r.amount)}`).join('、');
+  const note = '分擔計算：' + breakdown;
+
+  // 只保留允許欄位（#9 精神：避免寫入髒資料）
+  const txn = {
+    id: uid(), type: 'expense', amount: total, date: todayISO(),
+    category: '', accountId: '', note, paidBy, createdAt: Date.now(),
+  };
+  const clean = {};
+  TXN_ALLOWED_FIELDS.forEach(f => { if (f in txn) clean[f] = txn[f]; });
+  DB.txns.push(clean);
+  if (!save()) { toast('儲存失敗'); return; }  // #8 修復：save 失敗則不繼續
+  const who = paidBy ? (DB.members.find(m => m.id === paidBy) || {}).name : '未指定';
+  toast(`已入帳：${fmtMoney(total)}（付款人 ${who || '未指定'}）`);
+  $('#splitCalcModal').hidden = true;
+  render();
+}
 
 /* =========================================================
    繳費彈窗
@@ -1193,7 +1261,10 @@ function bindMemberEvents() {
   $('#addMemberBtn').addEventListener('click', () => openMemberModal());
   $('#memberForm').addEventListener('submit', saveMember);
   $('#deleteMemberBtn').addEventListener('click', deleteMember);
-  $('#splitPeriod').addEventListener('change', renderMemberSplit);
+  $('#splitPeriod').addEventListener('change', onSplitPeriodChange);
+  // 自訂日期範圍：起/止變動即時重算分帳統計
+  $('#splitStart').addEventListener('change', renderMemberSplit);
+  $('#splitEnd').addEventListener('change', renderMemberSplit);
   // 交易彈窗的付款人下拉：選「＋ 新增成員」時跳出成員彈窗
   $('#txnPaidBy').addEventListener('change', () => { if ($('#txnPaidBy').value === '__new') openMemberModal(); });
   // 成員彈窗關閉時，若交易彈窗仍開著且付款人停在「＋ 新增成員」，還原為未指定
@@ -1285,6 +1356,7 @@ function bindMiscEvents() {
 function bindSplitCalcEvents() {
   $('#openSplitCalc').addEventListener('click', openSplitCalc);
   $('#addSplitPart').addEventListener('click', addSplitPart);
+  $('#splitRecordBtn').addEventListener('click', recordSplitTxn);
   $('#splitFromMembers').addEventListener('click', splitFromMembers);
   // 模式分頁
   $$('#splitModeTabs .seg').forEach(s => s.addEventListener('click', () => splitCalcSetMode(s.dataset.splitmode)));
