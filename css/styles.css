@@ -198,7 +198,20 @@ body {
 .member-item:active { background: var(--surface-2); }
 .member-name { font-weight: 700; }
 .member-count { font-size: 12px; color: var(--text-3); }
+.mini-select { font-size: 12px; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--text); }
 .data-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* 成員分帳統計 */
+.split-box { border-top: 1px solid var(--line); margin-top: 14px; }
+.split-list { display: flex; flex-direction: column; gap: 12px; }
+.split-row { display: flex; flex-direction: column; gap: 6px; }
+.split-top { display: flex; align-items: baseline; justify-content: space-between; font-size: 13px; }
+.split-name { font-weight: 700; }
+.split-amt { color: var(--text-2); font-size: 12px; }
+.split-bar { height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+.split-bar > span { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, #2563eb, #60a5fa); }
+.split-total { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line); font-size: 13px; color: var(--text-2); }
+.split-total strong { color: var(--text); }
 .hint-text { font-size: 11px; color: var(--text-3); margin-top: 10px; }
 
 /* ---------- Buttons ---------- */

@@ -169,6 +169,16 @@
           <div class="card-head"><h2>成員（誰付錢）</h2></div>
           <div id="memberList" class="member-list"></div>
           <button class="fab secondary" id="addMemberBtn" style="margin-top:10px">＋ 新增成員</button>
+          <div class="split-box">
+            <div class="card-head" style="margin-top:14px">
+              <h2>成員分帳統計</h2>
+              <select id="splitPeriod" class="mini-select">
+                <option value="all">全部</option>
+                <option value="month">本月</option>
+              </select>
+            </div>
+            <div id="memberSplit" class="split-list"></div>
+          </div>
         </div>
         <div class="card" style="margin-top:16px">
           <div class="card-head"><h2>資料管理</h2></div>
@@ -210,7 +220,7 @@
             <button class="ghost-btn" id="cloudDownloadBtn" disabled>下載還原</button>
             <button class="danger-btn" id="cloudDisconnectBtn" disabled>斷線</button>
           </div>
-          <p class="hint-text" id="cloudStatus" style="margin-top:10px">尚未連接 <small style="color:#999">[v3.12]</small></p>
+          <p class="hint-text" id="cloudStatus" style="margin-top:10px">尚未連接 <small style="color:#999">[v3.13]</small></p>
           <p class="hint-text">備份內容為完整資料（帳戶／交易／繳費）的 JSON，儲存於你的雲端硬碟私人空間；採用客戶端 OAuth（PKCE），不經過任何第三方伺服器。</p>
         </div>
       </section>
@@ -379,7 +389,7 @@
   <!-- Toast -->
   <div id="toast" class="toast" hidden></div>
 
-  <script src="js/cloud.js?v=3.12"></script>
-  <script src="js/app.js?v=3.12"></script>
+  <script src="js/cloud.js?v=3.13"></script>
+  <script src="js/app.js?v=3.13"></script>
 </body>
 </html>

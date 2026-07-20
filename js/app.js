@@ -41,7 +41,7 @@ const ACCOUNT_META = {
 const CHART_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#f59e0b', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#14b8a6', '#6366f1', '#a855f7', '#eab308', '#64748b'];
 
 /* ---------- 版本資訊 ---------- */
-const APP_VERSION = 'v3.12';
+const APP_VERSION = 'v3.13';
 const APP_BUILD_DATE = '2026-07-20';
 
 /* ---------- 工具 ---------- */
@@ -429,6 +429,7 @@ function renderAccounts() {
     </div>`;
   }).join('') || '<div class="empty">尚無帳戶</div>';
   renderMembers();
+  renderMemberSplit();
   if (window.Cloud) Cloud.refreshUI();
 }
 
@@ -718,6 +719,39 @@ function renderMembers() {
     : '<div class="empty">尚無成員，點下方新增</div>';
 }
 
+/* 成員分帳統計：依付款人彙總支出金額與佔比 */
+function renderMemberSplit() {
+  const el = $('#memberSplit');
+  if (!el) return;
+  const period = $('#splitPeriod') ? $('#splitPeriod').value : 'all';
+  const ym = todayISO().slice(0, 7);
+  const exps = DB.txns.filter(t =>
+    t.type === 'expense' && (period === 'all' || (t.date || '').slice(0, 7) === ym)
+  );
+  const grand = exps.reduce((s, t) => s + (Number(t.amount) || 0), 0);
+  if (grand <= 0) { el.innerHTML = '<div class="empty">此範圍尚無支出紀錄</div>'; return; }
+
+  const map = new Map();
+  exps.forEach(t => {
+    const key = t.paidBy || '';
+    map.set(key, (map.get(key) || 0) + (Number(t.amount) || 0));
+  });
+
+  const rows = DB.members.map(m => ({ id: m.id, name: m.name, amt: map.get(m.id) || 0 }));
+  if (map.has('')) rows.push({ id: '', name: '（未指定）', amt: map.get('') || 0 });
+  rows.sort((a, b) => b.amt - a.amt);
+
+  const max = rows.reduce((m, r) => Math.max(m, r.amt), 0);
+  el.innerHTML = rows.map(r => {
+    const pct = Math.round(r.amt / grand * 100);
+    const w = max ? Math.round(r.amt / max * 100) : 0;
+    return `<div class="split-row">
+      <div class="split-top"><span class="split-name">${escapeHtml(r.name)}</span><span class="split-amt">${fmtMoney(r.amt)} · ${pct}%</span></div>
+      <div class="split-bar"><span style="width:${w}%"></span></div>
+    </div>`;
+  }).join('') + `<div class="split-total">支出合計 <strong>${fmtMoney(grand)}</strong> · ${DB.members.length} 位成員分擔</div>`;
+}
+
 /* =========================================================
    繳費彈窗
    ========================================================= */
@@ -881,6 +915,7 @@ function bindEvents() {
   $('#addMemberBtn').addEventListener('click', () => openMemberModal());
   $('#memberForm').addEventListener('submit', saveMember);
   $('#deleteMemberBtn').addEventListener('click', deleteMember);
+  $('#splitPeriod').addEventListener('change', renderMemberSplit);
   // 交易彈窗的付款人下拉：選「＋ 新增成員」時跳出成員彈窗
   $('#txnPaidBy').addEventListener('change', () => { if ($('#txnPaidBy').value === '__new') openMemberModal(); });
   // 成員彈窗關閉時，若交易彈窗仍開著且付款人停在「＋ 新增成員」，還原為未指定
