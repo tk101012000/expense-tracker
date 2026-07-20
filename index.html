@@ -112,6 +112,11 @@
               </select>
             </label>
           </div>
+          <div class="field-row">
+            <label>付款人（誰付錢）
+              <select id="filterPaidBy"><option value="">全部付款人</option></select>
+            </label>
+          </div>
           <button class="ghost-btn" id="clearFilters">清除篩選</button>
         </div>
         <div class="list-summary" id="recordsSummary"></div>
@@ -161,6 +166,11 @@
         <div id="accountsList" class="account-list"></div>
         <button class="fab secondary" id="addAccountBtn">＋ 新增帳戶</button>
         <div class="card" style="margin-top:16px">
+          <div class="card-head"><h2>成員（誰付錢）</h2></div>
+          <div id="memberList" class="member-list"></div>
+          <button class="fab secondary" id="addMemberBtn" style="margin-top:10px">＋ 新增成員</button>
+        </div>
+        <div class="card" style="margin-top:16px">
           <div class="card-head"><h2>資料管理</h2></div>
           <div class="data-actions">
             <button class="ghost-btn" id="exportCsvBtn">匯出 CSV</button>
@@ -200,7 +210,7 @@
             <button class="ghost-btn" id="cloudDownloadBtn" disabled>下載還原</button>
             <button class="danger-btn" id="cloudDisconnectBtn" disabled>斷線</button>
           </div>
-          <p class="hint-text" id="cloudStatus" style="margin-top:10px">尚未連接 <small style="color:#999">[v3.11]</small></p>
+          <p class="hint-text" id="cloudStatus" style="margin-top:10px">尚未連接 <small style="color:#999">[v3.12]</small></p>
           <p class="hint-text">備份內容為完整資料（帳戶／交易／繳費）的 JSON，儲存於你的雲端硬碟私人空間；採用客戶端 OAuth（PKCE），不經過任何第三方伺服器。</p>
         </div>
       </section>
@@ -247,6 +257,9 @@
         </label>
         <label class="field">帳戶 <span class="req">*</span>
           <select id="txnAccount"></select>
+        </label>
+        <label class="field">付款人（誰付錢）
+          <select id="txnPaidBy"><option value="">未指定</option></select>
         </label>
         <label class="field">備註
           <input type="text" id="txnNote" maxlength="60" placeholder="選填，最多 60 字" />
@@ -343,10 +356,30 @@
     </div>
   </div>
 
+  <!-- ============ 成員編輯彈窗 ============ -->
+  <div class="modal" id="memberModal" hidden>
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3 id="memberModalTitle">新增成員</h3>
+        <button class="icon-btn" type="button" data-close>✕</button>
+      </div>
+      <form id="memberForm" class="modal-body">
+        <label class="field">成員名稱 <span class="req">*</span>
+          <input type="text" id="memberName" maxlength="20" placeholder="例：本人、配偶、小孩" />
+          <small class="err" id="errMemberName"></small>
+        </label>
+        <div class="modal-actions">
+          <button type="button" class="ghost-btn" id="deleteMemberBtn" hidden>刪除</button>
+          <button type="submit" class="primary-btn">儲存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Toast -->
   <div id="toast" class="toast" hidden></div>
 
-  <script src="js/cloud.js?v=3.11"></script>
-  <script src="js/app.js?v=3.11"></script>
+  <script src="js/cloud.js?v=3.12"></script>
+  <script src="js/app.js?v=3.12"></script>
 </body>
 </html>

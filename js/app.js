@@ -41,7 +41,7 @@ const ACCOUNT_META = {
 const CHART_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#f59e0b', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#14b8a6', '#6366f1', '#a855f7', '#eab308', '#64748b'];
 
 /* ---------- 版本資訊 ---------- */
-const APP_VERSION = 'v3.11';
+const APP_VERSION = 'v3.12';
 const APP_BUILD_DATE = '2026-07-20';
 
 /* ---------- 工具 ---------- */
@@ -64,14 +64,14 @@ function toast(msg) {
 }
 
 /* ---------- 資料存取 ---------- */
-let DB = { accounts: [], txns: [], bills: [] };
+let DB = { accounts: [], txns: [], bills: [], members: [] };
 
 function load() {
   try {
     const raw = localStorage.getItem(STORE_KEY);
     if (raw) { DB = JSON.parse(raw); }
   } catch (e) { console.error('讀取失敗', e); }
-  DB.accounts ||= []; DB.txns ||= []; DB.bills ||= [];
+  DB.accounts ||= []; DB.txns ||= []; DB.bills ||= []; DB.members ||= [];
 }
 function save() {
   try { localStorage.setItem(STORE_KEY, JSON.stringify(DB)); }
@@ -94,6 +94,11 @@ function seedDemo() {
   DB.bills = [
     { id: uid(), name: '社區管理費', amount: 2500, category: '管理費', accountId: bank.id, cycle: 'monthly', dueDate: due, note: '', paid: {} },
     { id: uid(), name: '信用卡帳單', amount: 8600, category: '信用卡費', accountId: bank.id, cycle: 'monthly', dueDate: `${m}-15`, note: '玉山卡', paid: {} },
+  ];
+  // 示範成員（誰付錢）
+  DB.members = [
+    { id: uid(), name: '本人' },
+    { id: uid(), name: '家人' },
   ];
   save();
 }
@@ -237,10 +242,15 @@ function txnRowHtml(t) {
     <div class="txn-icon">${icon}</div>
     <div class="txn-main">
       <div class="txn-cat">${escapeHtml(t.category)}</div>
-      <div class="txn-meta">${fmtDate(t.date)} · ${acc ? escapeHtml(acc.name) : '未知帳戶'}${t.note ? ' · ' + escapeHtml(t.note) : ''}</div>
+      <div class="txn-meta">${fmtDate(t.date)} · ${acc ? escapeHtml(acc.name) : '未知帳戶'}${t.note ? ' · ' + escapeHtml(t.note) : ''}${payerHtml(t)}</div>
     </div>
     <div class="txn-amount ${t.type}">${t.type === 'income' ? '+' : '-'}${fmtMoney(t.amount).replace(CURRENCY, CURRENCY)}</div>
   </div>`;
+}
+// 交易列上的「付款人」標籤
+function payerHtml(t) {
+  const m = t.paidBy && DB.members.find(x => x.id === t.paidBy);
+  return m ? ' · 付：' + escapeHtml(m.name) : '';
 }
 
 /* =========================================================
@@ -250,6 +260,7 @@ function renderRecords() {
   const kw = $('#searchKeyword').value.trim().toLowerCase();
   const from = $('#filterFrom').value, to = $('#filterTo').value;
   const cat = $('#filterCategory').value, accF = $('#filterAccount').value, typeF = $('#filterType').value;
+  const payerF = $('#filterPaidBy').value;
   const sort = $('#sortBy').value;
 
   let list = DB.txns.filter(t => {
@@ -258,9 +269,11 @@ function renderRecords() {
     if (cat && t.category !== cat) return false;
     if (accF && t.accountId !== accF) return false;
     if (typeF && t.type !== typeF) return false;
+    if (payerF && t.paidBy !== payerF) return false;
     if (kw) {
       const acc = DB.accounts.find(a => a.id === t.accountId);
-      const hay = `${t.category} ${t.note || ''} ${t.amount} ${acc ? acc.name : ''}`.toLowerCase();
+      const payer = t.paidBy && DB.members.find(m => m.id === t.paidBy);
+      const hay = `${t.category} ${t.note || ''} ${t.amount} ${acc ? acc.name : ''} ${payer ? payer.name : ''}`.toLowerCase();
       if (!hay.includes(kw)) return false;
     }
     return true;
@@ -415,6 +428,7 @@ function renderAccounts() {
       <div class="account-count">${count} 筆交易</div>
     </div>`;
   }).join('') || '<div class="empty">尚無帳戶</div>';
+  renderMembers();
   if (window.Cloud) Cloud.refreshUI();
 }
 
@@ -536,6 +550,7 @@ function openTxnModal(id) {
     setTxnType(t.type);
     fillCategorySelect($('#txnCategory'), t.type, t.category);
     fillAccountSelect($('#txnAccount'), t.accountId);
+    fillMemberSelect($('#txnPaidBy'), t.paidBy, false);
   } else {
     txnType = 'expense';
     $('#txnAmount').value = '';
@@ -543,6 +558,7 @@ function openTxnModal(id) {
     $('#txnNote').value = '';
     setTxnType('expense');
     fillAccountSelect($('#txnAccount'), DB.accounts[0] && DB.accounts[0].id);
+    fillMemberSelect($('#txnPaidBy'), DB.members[0] ? DB.members[0].id : '', false);
   }
   modal.hidden = false;
 }
@@ -559,6 +575,8 @@ function saveTxn(e) {
   clearErr(['errAmount', 'errDate']);
   const amount = parseFloat($('#txnAmount').value);
   const date = $('#txnDate').value;
+  let paidBy = $('#txnPaidBy').value;
+  if (paidBy === '__new') { openMemberModal(); return; } // 先新增成員，稍後再存
   let ok = true;
   if (!(amount > 0)) { $('#errAmount').textContent = '請輸入大於 0 的金額'; ok = false; }
   if (!date) { $('#errDate').textContent = '請選擇日期'; ok = false; }
@@ -567,7 +585,7 @@ function saveTxn(e) {
   const payload = {
     type: txnType, amount: Math.round(amount * 100) / 100, date,
     category: $('#txnCategory').value, accountId: $('#txnAccount').value,
-    note: $('#txnNote').value.trim(),
+    note: $('#txnNote').value.trim(), paidBy: paidBy || '',
   };
   if (editTxnId) {
     const t = DB.txns.find(x => x.id === editTxnId);
@@ -621,6 +639,83 @@ function deleteAccount() {
   if (!confirm('確定刪除此帳戶？')) return;
   DB.accounts = DB.accounts.filter(a => a.id !== editAccId);
   save(); $('#accountModal').hidden = true; toast('已刪除帳戶'); render();
+}
+
+/* =========================================================
+   成員彈窗（誰付錢）
+   ========================================================= */
+let editMemberId = null;
+let memberReturnToTxn = false; // 從交易彈窗的「＋ 新增成員」進入
+function fillMemberSelect(sel, selected, withAll) {
+  const opts = (withAll ? '<option value="">全部付款人</option>' : '<option value="">未指定</option>')
+    + DB.members.map(m => `<option value="${m.id}">${escapeHtml(m.name)}</option>`).join('')
+    + (withAll ? '' : '<option value="__new">＋ 新增成員…</option>');
+  sel.innerHTML = opts;
+  sel.value = selected || (withAll ? '' : '');
+}
+function openMemberModal(id) {
+  editMemberId = id || null;
+  const txnModal = document.getElementById('txnModal');
+  memberReturnToTxn = !id && txnModal && !txnModal.hidden;
+  $('#memberModalTitle').textContent = id ? '編輯成員' : '新增成員';
+  $('#deleteMemberBtn').hidden = !id;
+  $('#errMemberName').textContent = '';
+  $('#memberName').value = id ? ((DB.members.find(x => x.id === id) || {}).name || '') : '';
+  $('#memberModal').hidden = false;
+  setTimeout(() => $('#memberName').focus(), 50);
+}
+function saveMember(e) {
+  e.preventDefault();
+  const name = $('#memberName').value.trim();
+  if (!name) { $('#errMemberName').textContent = '請輸入成員名稱'; return; }
+  let newId = null;
+  if (editMemberId) {
+    const m = DB.members.find(x => x.id === editMemberId);
+    if (m) m.name = name;
+    toast('已更新成員');
+  } else {
+    newId = uid();
+    DB.members.push({ id: newId, name });
+    toast('已新增成員');
+  }
+  save();
+  if (memberReturnToTxn) {
+    const txnSel = $('#txnPaidBy');
+    fillMemberSelect(txnSel, newId || editMemberId || '', false);
+    $('#memberModal').hidden = true;
+    return;
+  }
+  $('#memberModal').hidden = true;
+  fillMemberSelect($('#filterPaidBy'), $('#filterPaidBy').value, true);
+  render();
+}
+function deleteMember() {
+  if (!editMemberId) return;
+  const used = DB.txns.some(t => t.paidBy === editMemberId);
+  if (used && !confirm('此成員已有交易紀錄，刪除後相關交易將變為「未指定付款人」，確定刪除？')) return;
+  if (!used && !confirm('確定刪除此成員？')) return;
+  DB.members = DB.members.filter(m => m.id !== editMemberId);
+  DB.txns.forEach(t => { if (t.paidBy === editMemberId) t.paidBy = ''; });
+  save();
+  $('#memberModal').hidden = true;
+  const txnModal = document.getElementById('txnModal');
+  const txnSel = $('#txnPaidBy');
+  if (txnSel && txnModal && !txnModal.hidden) fillMemberSelect(txnSel, '', false);
+  fillMemberSelect($('#filterPaidBy'), $('#filterPaidBy').value, true);
+  render();
+}
+function renderMembers() {
+  const el = $('#memberList');
+  if (!el) return;
+  el.innerHTML = DB.members.length
+    ? DB.members.map(m => {
+        const count = DB.txns.filter(t => t.paidBy === m.id).length;
+        return `<div class="member-item" data-memberedit="${m.id}">
+          <span class="member-name">${escapeHtml(m.name)}</span>
+          <span class="member-count">${count} 筆</span>
+        </div>`;
+      }).join('')
+    : '<div class="empty">尚無成員，點下方新增</div>';
 }
 
 /* =========================================================
@@ -728,9 +823,10 @@ function csvCell(v) {
 }
 function exportCSV() {
   const accName = id => { const a = DB.accounts.find(x => x.id === id); return a ? a.name : ''; };
-  const header = ['日期', '類型', '類別', '金額', '帳戶', '備註'];
+  const payerName = id => { if (!id) return ''; const m = DB.members.find(x => x.id === id); return m ? m.name : ''; };
+  const header = ['日期', '類型', '類別', '金額', '帳戶', '付款人', '備註'];
   const rows = [...DB.txns].sort((a, b) => a.date.localeCompare(b.date)).map(t =>
-    [t.date, t.type === 'income' ? '收入' : '支出', t.category, t.amount, accName(t.accountId), (t.note || '')]
+    [t.date, t.type === 'income' ? '收入' : '支出', t.category, t.amount, accName(t.accountId), payerName(t.paidBy), (t.note || '')]
       .map(csvCell).join(','));
   const csv = '\uFEFF' + [header.join(','), ...rows].join('\r\n'); // BOM 供 Excel 正確辨識中文
   download(`繳費記帳_${todayISO()}.csv`, csv, 'text/csv;charset=utf-8');
@@ -739,7 +835,7 @@ function exportCSV() {
 function doImport(parsed) {
   if (!parsed || !Array.isArray(parsed.accounts) || !Array.isArray(parsed.txns)) throw new Error('格式不符');
   if (!confirm('匯入將覆蓋目前所有資料，確定繼續？')) return false;
-  DB = { accounts: parsed.accounts || [], txns: parsed.txns || [], bills: Array.isArray(parsed.bills) ? parsed.bills : [] };
+  DB = { accounts: parsed.accounts || [], txns: parsed.txns || [], bills: Array.isArray(parsed.bills) ? parsed.bills : [], members: Array.isArray(parsed.members) ? parsed.members : [] };
   save(); render(); toast('匯入成功');
   return true;
 }
@@ -781,6 +877,21 @@ function bindEvents() {
   $('#accountForm').addEventListener('submit', saveAccount);
   $('#deleteAccBtn').addEventListener('click', deleteAccount);
 
+  // 成員（誰付錢）
+  $('#addMemberBtn').addEventListener('click', () => openMemberModal());
+  $('#memberForm').addEventListener('submit', saveMember);
+  $('#deleteMemberBtn').addEventListener('click', deleteMember);
+  // 交易彈窗的付款人下拉：選「＋ 新增成員」時跳出成員彈窗
+  $('#txnPaidBy').addEventListener('change', () => { if ($('#txnPaidBy').value === '__new') openMemberModal(); });
+  // 成員彈窗關閉時，若交易彈窗仍開著且付款人停在「＋ 新增成員」，還原為未指定
+  $('#memberModal').addEventListener('click', e => {
+    if (e.target === $('#memberModal') || e.target.closest('[data-close]')) {
+      const txnSel = $('#txnPaidBy');
+      if (txnSel && txnSel.value === '__new') txnSel.value = '';
+      memberReturnToTxn = false;
+    }
+  });
+
   // 繳費
   $('#addBillBtn').addEventListener('click', () => openBillModal());
   $('#billForm').addEventListener('submit', saveBill);
@@ -797,6 +908,8 @@ function bindEvents() {
     if (txn) return openTxnModal(txn.dataset.txn);
     const acc = e.target.closest('[data-accedit]');
     if (acc) return openAccountModal(acc.dataset.accedit);
+    const memberEdit = e.target.closest('[data-memberedit]');
+    if (memberEdit) return openMemberModal(memberEdit.dataset.memberedit);
     const togglePayBtn = e.target.closest('[data-togglepay]');
     if (togglePayBtn) { e.stopPropagation(); return togglePay(togglePayBtn.dataset.togglepay, togglePayBtn.dataset.period, !togglePayBtn.classList.contains('paid')); }
     const quick = e.target.closest('[data-quickpay]');
@@ -812,7 +925,7 @@ function bindEvents() {
 
   // 記帳篩選
   $('#searchKeyword').addEventListener('input', renderRecords);
-  ['filterFrom', 'filterTo', 'filterCategory', 'filterAccount', 'filterType', 'sortBy'].forEach(id =>
+  ['filterFrom', 'filterTo', 'filterCategory', 'filterAccount', 'filterType', 'filterPaidBy', 'sortBy'].forEach(id =>
     $('#' + id).addEventListener('change', renderRecords));
   $('#toggleFilters').addEventListener('click', () => { $('#filterPanel').hidden = !$('#filterPanel').hidden; });
   $('#clearFilters').addEventListener('click', () => {
@@ -831,7 +944,7 @@ function bindEvents() {
   $('#importFile').addEventListener('change', e => { if (e.target.files[0]) importJSON(e.target.files[0]); e.target.value = ''; });
   $('#importTextBtn').addEventListener('click', importFromText);
   $('#resetBtn').addEventListener('click', () => {
-    if (confirm('確定清空所有資料？此動作無法復原！')) { localStorage.removeItem(STORE_KEY); DB = { accounts: [], txns: [], bills: [] }; save(); render(); toast('已清空所有資料'); }
+    if (confirm('確定清空所有資料？此動作無法復原！')) { localStorage.removeItem(STORE_KEY); DB = { accounts: [], txns: [], bills: [], members: [] }; save(); render(); toast('已清空所有資料'); }
   });
 
   // 提醒鈕
@@ -852,6 +965,7 @@ function init() {
   load();
   fillFilterCategory();
   fillAccountSelect($('#filterAccount'), '', true);
+  fillMemberSelect($('#filterPaidBy'), '', true);
   bindEvents();
   switchView('dashboard');
   // 雲端模組（處理 OAuth 回跳、綁定 UI）
@@ -872,7 +986,7 @@ window.BK = {
   importData: (str) => {
     const d = JSON.parse(str);
     if (!Array.isArray(d.accounts) || !Array.isArray(d.txns)) throw new Error('檔案格式錯誤');
-    DB = { accounts: d.accounts || [], txns: d.txns || [], bills: Array.isArray(d.bills) ? d.bills : [] };
+    DB = { accounts: d.accounts || [], txns: d.txns || [], bills: Array.isArray(d.bills) ? d.bills : [], members: Array.isArray(d.members) ? d.members : [] };
     save(); render();
   },
 };
