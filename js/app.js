@@ -108,7 +108,7 @@ const ACCOUNT_META = {
 const CHART_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#f59e0b', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#14b8a6', '#6366f1', '#a855f7', '#eab308', '#64748b'];
 
 /* ---------- 版本資訊 ---------- */
-const APP_VERSION = 'yu-v3.21';
+const APP_VERSION = 'yu-v3.22';
 const APP_BUILD_DATE = '2026-07-20';
 
 /* ---------- 工具 ---------- */
@@ -168,6 +168,32 @@ function load() {
   DB.settings.currency = getCurrencyMeta(savedCode) ? savedCode : detectDefaultCurrency();
   applyCurrency();
   _balanceDirty = true;
+}
+
+/* ---------- iOS 加到主畫面引導 ---------- */
+// 偵測 iOS / iPadOS（含 iPadOS 13+ 以 Macintosh 偽裝的狀況）
+function isIOSDevice() {
+  const ua = navigator.userAgent;
+  const iOS = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
+  const iPadOS = /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;
+  return iOS || iPadOS;
+}
+function isStandalone() {
+  return ('standalone' in navigator) && navigator.standalone === true;
+}
+const IOS_HINT_KEY = 'iosHintDismissed';
+function maybeShowIosHint() {
+  const box = $('#iosHint');
+  const close = $('#iosHintClose');
+  if (!box) return;
+  // 只在 iOS 且尚未以獨立模式（加到主畫面）執行時顯示；已關閉過則不再提示
+  if (!isIOSDevice() || isStandalone()) { box.hidden = true; return; }
+  try { if (localStorage.getItem(IOS_HINT_KEY) === '1') { box.hidden = true; return; } } catch (_) { /* ignore */ }
+  box.hidden = false;
+  if (close) close.addEventListener('click', () => {
+    box.hidden = true;
+    try { localStorage.setItem(IOS_HINT_KEY, '1'); } catch (_) { /* ignore */ }
+  });
 }
 // #8 修復：save() 回傳 boolean，讓呼叫方能判斷是否成功
 function save() {
@@ -1971,6 +1997,7 @@ function init() {
   fillAccountSelect($('#filterAccount'), '', true);
   fillMemberSelect($('#filterPaidBy'), '', true);
   bindEvents();
+  maybeShowIosHint();
   renderCurrencyPicker();
   switchView('dashboard');
   // 雲端模組（處理 OAuth 回跳、綁定 UI）
