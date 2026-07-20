@@ -319,7 +319,7 @@
             <button class="ghost-btn" id="cloudDownloadBtn" disabled>下載還原</button>
             <button class="danger-btn" id="cloudDisconnectBtn" disabled>斷線</button>
           </div>
-          <p class="hint-text" id="cloudStatus" style="margin-top:10px">尚未連接 <small style="color:#999">[yu-v3.22]</small></p>
+          <p class="hint-text" id="cloudStatus" style="margin-top:10px">尚未連接 <small style="color:#999">[yu-v3.23]</small></p>
           <p class="hint-text">備份內容為完整資料（帳戶／交易／繳費）的 JSON，儲存於你的雲端硬碟私人空間；採用客戶端 OAuth（PKCE），不經過任何第三方伺服器。</p>
         </div>
       </section>
@@ -366,6 +366,9 @@
         </label>
         <label class="field">帳戶 <span class="req">*</span>
           <select id="txnAccount"></select>
+        </label>
+        <label class="field">幣別
+          <select id="txnCurrency"></select>
         </label>
         <label class="field">付款人（誰付錢）
           <select id="txnPaidBy"><option value="">未指定</option></select>
@@ -447,6 +450,9 @@
         <label class="field">金額 <span class="req">*</span>
           <input type="number" id="billAmount" step="0.01" min="0" inputmode="decimal" placeholder="0.00" />
           <small class="err" id="errBillAmount"></small>
+        </label>
+        <label class="field">幣別
+          <select id="billCurrency"></select>
         </label>
         <label class="field">類別
           <select id="billCategory"><option value="">未分類</option></select>
@@ -564,6 +570,6 @@
   <div id="toast" class="toast" hidden></div>
 
   <script src="js/cloud.js?v=yu-3.17"></script>
-  <script src="js/app.js?v=yu-3.22"></script>
+  <script src="js/app.js?v=yu-3.23"></script>
 </body>
 </html>
