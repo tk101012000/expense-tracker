@@ -216,6 +216,20 @@ body {
 .split-total { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--border); font-size: 13px; color: var(--text-2); } /* #14 修復：--line → --border */
 .split-total strong { color: var(--text); }
 
+/* ---------- 每人應付（分擔結算，yu-v3.21） ---------- */
+.pay-list { display: flex; flex-direction: column; gap: 12px; }
+.pay-row { display: flex; flex-direction: column; gap: 5px; padding: 12px 14px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 14px; }
+.pay-top { display: flex; align-items: baseline; justify-content: space-between; }
+.pay-name { font-weight: 700; font-size: 14px; }
+.pay-net { font-size: 13px; font-weight: 700; }
+.pay-net.recv { color: var(--income); }   /* 應收：別人欠他 */
+.pay-net.owe { color: var(--expense); }   /* 應付：他欠別人 */
+.pay-net.even { color: var(--text-2); }
+.pay-detail { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-2); }
+.pay-detail .dot { color: var(--text-3); }
+.pay-total { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--border); font-size: 13px; color: var(--text-2); }
+.pay-total strong { color: var(--text); }
+
 /* ---------- 分擔計算機（v3.15） ---------- */
 .split-parts { display: flex; flex-direction: column; gap: 8px; }
 .split-part-row { display: flex; align-items: center; gap: 8px; }

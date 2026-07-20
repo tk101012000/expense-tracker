@@ -108,7 +108,7 @@ const ACCOUNT_META = {
 const CHART_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#f59e0b', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#14b8a6', '#6366f1', '#a855f7', '#eab308', '#64748b'];
 
 /* ---------- 版本資訊 ---------- */
-const APP_VERSION = 'yu-v3.20';
+const APP_VERSION = 'yu-v3.21';
 const APP_BUILD_DATE = '2026-07-20';
 
 /* ---------- 工具 ---------- */
@@ -581,6 +581,7 @@ function renderAccounts() {
   renderMembers();
   renderMemberSplit();
   renderMemberContrib();
+  renderPaySettle();
   renderCurrencyPicker();
   if (window.Cloud) Cloud.refreshUI();
 }
@@ -1269,6 +1270,127 @@ function bindContribEvents() {
 }
 
 /* =========================================================
+   每人應付（分擔結算）  yu-v3.21
+   依據記帳與繳費中的「多人分擔」(splitMode/shares) 結算每位成員：
+     payable 應付 = 其分擔份額合計（一人要付多少錢）
+     paid    已付(墊付) = 其身為 paidBy 的整筆金額合計
+     net = paid - payable  → 正：別人欠他(應收)；負：他欠別人(應付)
+   ========================================================= */
+function payInRange(dateStr, period) {
+  if (period === 'all') return true;
+  const ym = todayISO().slice(0, 7);
+  if (period === 'month') return (dateStr || '').slice(0, 7) === ym;
+  if (period === 'custom') {
+    const s = $('#payStart') ? $('#payStart').value : '';
+    const e = $('#payEnd') ? $('#payEnd').value : '';
+    if (!s || !e) return true; // 未選範圍時視同全部
+    return (dateStr || '') >= s && (dateStr || '') <= e;
+  }
+  return true;
+}
+
+// 收集並結算所有「有分擔」的項目（記帳 + 繳費）
+function computePaySettle(period) {
+  const items = [];
+  DB.txns.forEach(t => {
+    if (t.splitMode && t.splitMode !== 'none' && Array.isArray(t.shares) && t.shares.length) {
+      if (payInRange(t.date, period)) items.push({ total: Number(t.amount) || 0, paidBy: t.paidBy || '', mode: t.splitMode, shares: t.shares });
+    }
+  });
+  DB.bills.forEach(b => {
+    if (b.splitMode && b.splitMode !== 'none' && Array.isArray(b.shares) && b.shares.length) {
+      if (payInRange(b.dueDate, period)) items.push({ total: Number(b.amount) || 0, paidBy: b.paidBy || '', mode: b.splitMode, shares: b.shares });
+    }
+  });
+  if (!items.length) return null;
+  const map = new Map();
+  DB.members.forEach(m => map.set(m.id, { id: m.id, name: m.name, payable: 0, paid: 0 }));
+  let grand = 0, itemCount = 0;
+  items.forEach(it => {
+    const amts = computeSplitAmounts(it.total, it.mode, it.shares);
+    grand += it.total; itemCount++;
+    amts.forEach(a => { if (a.memberId && map.has(a.memberId)) map.get(a.memberId).payable += a.amount; });
+    if (it.paidBy && map.has(it.paidBy)) map.get(it.paidBy).paid += it.total;
+  });
+  const rows = [...map.values()].filter(r => r.payable > 0 || r.paid > 0);
+  rows.sort((a, b) => (b.paid - b.payable) - (a.paid - a.payable)); // 依淨額排序（應收→應付）
+  return { rows, grand, itemCount };
+}
+
+// 主渲染：每位成員 應付 / 已付 / 淨結算
+function renderPaySettle() {
+  const el = $('#paySettle'); if (!el) return;
+  const period = $('#payPeriod') ? $('#payPeriod').value : 'all';
+  const rangeEl = $('#payRange');
+  if (rangeEl) rangeEl.hidden = period !== 'custom';
+  const data = computePaySettle(period);
+  if (!data || !data.rows.length) { el.innerHTML = '<div class="empty">尚無多人分擔紀錄</div>'; return; }
+  const { rows, itemCount } = data;
+  const totalPayable = rows.reduce((s, r) => s + r.payable, 0);
+  el.innerHTML = rows.map(r => {
+    const net = Math.round((r.paid - r.payable) * 100) / 100;
+    const netCls = net > 0 ? 'recv' : (net < 0 ? 'owe' : 'even');
+    const netTxt = net > 0 ? `應收 ${fmtMoney(net)}` : (net < 0 ? `應付 ${fmtMoney(-net)}` : '已兩清');
+    return `<div class="pay-row">
+      <div class="pay-top">
+        <span class="pay-name">${escapeHtml(r.name)}</span>
+        <span class="pay-net ${netCls}">${netTxt}</span>
+      </div>
+      <div class="pay-detail">
+        <span>應付 ${fmtMoney(Math.round(r.payable * 100) / 100)}</span>
+        <span class="dot">·</span>
+        <span>已付 ${fmtMoney(Math.round(r.paid * 100) / 100)}</span>
+      </div>
+    </div>`;
+  }).join('') +
+    `<div class="pay-total">分擔項目 ${itemCount} 筆 · 應付合計 <strong>${fmtMoney(Math.round(totalPayable * 100) / 100)}</strong></div>`;
+}
+
+// 匯出每人應付（分擔結算）報表（CSV）
+function exportPaySettle() {
+  const period = $('#payPeriod') ? $('#payPeriod').value : 'all';
+  const periodTxt = { all: '全部', month: '本月', custom: '自訂' }[period] || period;
+  const data = computePaySettle(period);
+  if (!data || !data.rows.length) { toast('尚無可分擔結算資料'); return; }
+  const totalPayable = data.rows.reduce((s, r) => s + r.payable, 0);
+  const lines = [];
+  lines.push(csvCell('每人應付（分擔結算）報表（區間：' + periodTxt + '）'));
+  lines.push([csvCell('成員'), csvCell('應付金額'), csvCell('已付(墊付)'), csvCell('淨結算'), csvCell('說明')].join(','));
+  data.rows.forEach(r => {
+    const net = Math.round((r.paid - r.payable) * 100) / 100;
+    const desc = net > 0 ? '別人應付給他' : (net < 0 ? '他應付給別人' : '已兩清');
+    lines.push([csvCell(r.name), csvCell(Math.round(r.payable * 100) / 100), csvCell(Math.round(r.paid * 100) / 100), csvCell(net), csvCell(desc)].join(','));
+  });
+  lines.push('');
+  lines.push(csvCell('分擔項目 ' + data.itemCount + ' 筆 · 應付合計 ' + (Math.round(totalPayable * 100) / 100)));
+  const csv = '﻿' + lines.join('\r\n');
+  download(`每人應付結算_${todayISO()}.csv`, csv, 'text/csv;charset=utf-8');
+  toast('已匯出結算報表');
+}
+
+// 每人應付結算：範圍切換、自訂日期、匯出
+function bindPaySettleEvents() {
+  const p = $('#payPeriod');
+  if (p) p.addEventListener('change', () => {
+    const period = p.value;
+    const rangeEl = $('#payRange');
+    if (rangeEl) rangeEl.hidden = period !== 'custom';
+    if (period === 'custom') {
+      const s = $('#payStart'), e = $('#payEnd');
+      if (s && !s.value) s.value = todayISO().slice(0, 8) + '01';
+      if (e && !e.value) e.value = todayISO();
+    }
+    renderPaySettle();
+  });
+  ['payStart', 'payEnd'].forEach(id => {
+    const el = $('#' + id);
+    if (el) el.addEventListener('change', renderPaySettle);
+  });
+  const ex = $('#payExportBtn');
+  if (ex) ex.addEventListener('click', exportPaySettle);
+}
+
+/* =========================================================
    分擔計算機（人員分擔功能計算選項模組）  v3.16
    需求對應：
    1) 平均分擔 / 自訂比例 兩種計算模式
@@ -1830,6 +1952,7 @@ function bindEvents() {
   bindMiscEvents();
   bindSplitCalcEvents();
   bindContribEvents();
+  bindPaySettleEvents();
   bindSplitEditor(txnSplit, TXN_SPLIT_IDS);
   bindSplitEditor(billSplit, BILL_SPLIT_IDS);
 }

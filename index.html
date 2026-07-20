@@ -247,6 +247,24 @@
           <div class="contrib-detail" id="contribDetail"></div>
         </div>
         <div class="card" style="margin-top:16px">
+          <div class="card-head"><h2>💸 每人應付（分擔結算）</h2>
+            <button class="ghost-btn small" id="payExportBtn" type="button">匯出報表</button>
+          </div>
+          <p class="hint-text" style="margin-top:0">依據記帳與繳費中的「多人分擔」，結算每位成員應付金額與淨收支（誰該付給誰）。</p>
+          <div class="card-head" style="margin-top:6px">
+            <select id="payPeriod" class="mini-select">
+              <option value="all">全部</option>
+              <option value="month">本月</option>
+              <option value="custom">自訂範圍</option>
+            </select>
+          </div>
+          <div id="payRange" class="split-range" hidden>
+            <label class="range-field">起 <input type="date" id="payStart" class="mini-input" /></label>
+            <label class="range-field">止 <input type="date" id="payEnd" class="mini-input" /></label>
+          </div>
+          <div id="paySettle" class="pay-list"></div>
+        </div>
+        <div class="card" style="margin-top:16px">
           <div class="card-head"><h2>🧮 分擔計算機</h2></div>
           <p class="hint-text" style="margin-top:0">輸入總金額與參與人員，立即算出品每人應付金額（平均分擔或自訂比例）。</p>
           <button class="ghost-btn" id="openSplitCalc" style="width:100%">開啟計算機</button>
@@ -291,7 +309,7 @@
             <button class="ghost-btn" id="cloudDownloadBtn" disabled>下載還原</button>
             <button class="danger-btn" id="cloudDisconnectBtn" disabled>斷線</button>
           </div>
-          <p class="hint-text" id="cloudStatus" style="margin-top:10px">尚未連接 <small style="color:#999">[yu-v3.20]</small></p>
+          <p class="hint-text" id="cloudStatus" style="margin-top:10px">尚未連接 <small style="color:#999">[yu-v3.21]</small></p>
           <p class="hint-text">備份內容為完整資料（帳戶／交易／繳費）的 JSON，儲存於你的雲端硬碟私人空間；採用客戶端 OAuth（PKCE），不經過任何第三方伺服器。</p>
         </div>
       </section>
@@ -536,6 +554,6 @@
   <div id="toast" class="toast" hidden></div>
 
   <script src="js/cloud.js?v=yu-3.17"></script>
-  <script src="js/app.js?v=yu-3.20"></script>
+  <script src="js/app.js?v=yu-3.21"></script>
 </body>
 </html>
