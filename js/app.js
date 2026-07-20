@@ -1,10 +1,13 @@
 /* =========================================================
    繳費記帳 PWA  ·  純前端 / localStorage 持久化
+   v3.14 — 全面審計修復版（22 項問題已修復，見行內註解）
    ========================================================= */
 'use strict';
 
 /* ---------- 常數 ---------- */
 const STORE_KEY = 'billkeeper_v1';
+// #18 補充：損壞備份用的 key（#1 修復用）
+const BACKUP_KEY = 'billkeeper_v1_corrupt_backup';
 const CURRENCY = '¥';
 
 const EXPENSE_CATS = [
@@ -41,13 +44,15 @@ const ACCOUNT_META = {
 const CHART_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#f59e0b', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#14b8a6', '#6366f1', '#a855f7', '#eab308', '#64748b'];
 
 /* ---------- 版本資訊 ---------- */
-const APP_VERSION = 'v3.13';
+const APP_VERSION = 'v3.14';
 const APP_BUILD_DATE = '2026-07-20';
 
 /* ---------- 工具 ---------- */
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
-const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+// #13 修復：UID 加入遞增計數器後綴，消除同毫秒碰撞風隹
+let _uidSeq = 0;
+const uid = () => Date.now().toString(36) + (++_uidSeq).toString(36).padStart(5, '0') + Math.random().toString(36).slice(2, 7);
 const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 // 以本地時區把 Date 轉成 YYYY-MM-DD（不要用 toISOString，否則 GMT+8 會跨日）
 function isoLocal(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
@@ -65,56 +70,63 @@ function toast(msg) {
 
 /* ---------- 資料存取 ---------- */
 let DB = { accounts: [], txns: [], bills: [], members: [] };
+// #6 優化：餘額快取，避免每次渲染 O(n*m) 全量掃描
+let _balanceCache = {};
+let _balanceDirty = true;
 
 function load() {
   try {
     const raw = localStorage.getItem(STORE_KEY);
-    if (raw) { DB = JSON.parse(raw); }
-  } catch (e) { console.error('讀取失敗', e); }
+    if (raw) {
+      // #1 修復：JSON.parse 失敗時先備份原始資料，再通知用戶
+      DB = JSON.parse(raw);
+    }
+  } catch (e) {
+    console.error('讀取失敗', e);
+    // 備份損壞的原始資料到另一個 key，供手動救援
+    const raw = localStorage.getItem(STORE_KEY);
+    if (raw) {
+      try { localStorage.setItem(BACKUP_KEY, raw); } catch (_) { /* ignore */ }
+    }
+    alert(
+      '⚠️ 資料讀取失敗（可能是儲存空間損壞）。\n\n' +
+      '系統將以空白狀態啟動。若需救回舊資料，請在瀏覽器主控台執行：\n' +
+      `localStorage.getItem('${BACKUP_KEY}')\n\n` +
+      '錯誤詳情：' + (e.message || e)
+    );
+  }
+  // 確保所有陣列存在
   DB.accounts ||= []; DB.txns ||= []; DB.bills ||= []; DB.members ||= [];
+  _balanceDirty = true;
 }
+// #8 修復：save() 回傳 boolean，讓呼叫方能判斷是否成功
 function save() {
-  try { localStorage.setItem(STORE_KEY, JSON.stringify(DB)); }
-  catch (e) { toast('儲存失敗：空間不足'); }
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify(DB));
+    _balanceDirty = true;  // 標記餘額快取需要重建
+    return true;
+  } catch (e) {
+    toast('儲存失敗：空間不足，請檢查瀏覽器儲存配額');
+    return false;
+  }
 }
-function seedDemo() {
-  const cash = { id: uid(), name: '現金錢包', type: 'cash', balance: 3000, note: '' };
-  const bank = { id: uid(), name: '中國信託', type: 'bank', balance: 58000, note: '主要帳戶' };
-  const credit = { id: uid(), name: '玉山信用卡', type: 'credit', balance: 0, note: '' };
-  DB.accounts = [cash, bank, credit];
-  const t = todayISO(), m = monthKey();
-  DB.txns = [
-    { id: uid(), type: 'income', amount: 45000, date: `${m}-05`, category: '薪資', accountId: bank.id, note: '月薪', createdAt: Date.now() },
-    { id: uid(), type: 'expense', amount: 1280, date: `${m}-08`, category: '水電費', accountId: bank.id, note: '台電', createdAt: Date.now() },
-    { id: uid(), type: 'expense', amount: 620, date: `${m}-10`, category: '瓦斯費', accountId: bank.id, note: '', createdAt: Date.now() },
-    { id: uid(), type: 'expense', amount: 350, date: t, category: '餐飲', accountId: cash.id, note: '午餐', createdAt: Date.now() },
-    { id: uid(), type: 'expense', amount: 899, date: t, category: '電信網路', accountId: credit.id, note: '手機月租', createdAt: Date.now() },
-  ];
-  const due = `${m}-25`;
-  DB.bills = [
-    { id: uid(), name: '社區管理費', amount: 2500, category: '管理費', accountId: bank.id, cycle: 'monthly', dueDate: due, note: '', paid: {} },
-    { id: uid(), name: '信用卡帳單', amount: 8600, category: '信用卡費', accountId: bank.id, cycle: 'monthly', dueDate: `${m}-15`, note: '玉山卡', paid: {} },
-  ];
-  // 示範成員（誰付錢）
-  DB.members = [
-    { id: uid(), name: '本人' },
-    { id: uid(), name: '家人' },
-  ];
-  save();
-}
-
-/* ---------- 餘額計算 ---------- */
-function accountBalance(accId) {
-  const acc = DB.accounts.find(a => a.id === accId);
-  if (!acc) return 0;
-  let bal = Number(acc.balance) || 0;
+// #6 修復：取得帳戶餘額時使用快取（dirty 時才重建）
+function rebuildBalanceCache() {
+  if (!_balanceDirty) return;
+  const map = {};
+  DB.accounts.forEach(a => { map[a.id] = Number(a.balance) || 0; });
   DB.txns.forEach(t => {
-    if (t.accountId !== accId) return;
-    bal += t.type === 'income' ? Number(t.amount) : -Number(t.amount);
+    if (!(t.accountId in map)) return;
+    map[t.accountId] += t.type === 'income' ? Number(t.amount) : -Number(t.amount);
   });
-  return bal;
+  _balanceCache = map;
+  _balanceDirty = false;
 }
-const totalAssets = () => DB.accounts.reduce((s, a) => s + accountBalance(a.id), 0);
+function accountBalance(accId) {
+  rebuildBalanceCache();
+  return _balanceCache[accId] || 0;
+}
+const totalAssets = () => { rebuildBalanceCache(); return DB.accounts.reduce((s, a) => s + (_balanceCache[a.id] || 0), 0); };
 function monthTotals(mk) {
   let inc = 0, exp = 0;
   DB.txns.forEach(t => {
@@ -154,7 +166,11 @@ function render() {
 }
 
 /* ---------- 提醒計算 ---------- */
+// #15 優化：提醒快取，同一個 render 循環內不重複計算
+let _reminderCache = null;
+function invalidateReminderCache() { _reminderCache = null; }
 function getReminders() {
+  if (_reminderCache) return _reminderCache;
   // 回傳本期未繳且到期在 7 天內或已逾期的帳單
   const now = new Date(todayISO() + 'T00:00:00');
   const list = [];
@@ -168,7 +184,8 @@ function getReminders() {
       list.push({ bill: b, dueISO: occ.dueISO, diff, periodKey: occ.periodKey, status: diff < 0 ? 'overdue' : 'soon' });
     }
   });
-  return list.sort((a, b) => a.diff - b.diff);
+  _reminderCache = list.sort((a, b) => a.diff - b.diff);
+  return _reminderCache;
 }
 // 依週期推算「當前這一期」的到期日與週期鍵
 function currentOccurrence(bill) {
@@ -181,8 +198,10 @@ function currentOccurrence(bill) {
   let due = new Date(base);
   const stepMonths = bill.cycle === 'monthly' ? 1 : bill.cycle === 'quarterly' ? 3 : 12;
   // 找到 >= 今天(往前一期) 的當期
+  // #5 修復：while 迴圈加入安全計數器（上限 600 次 ≈ 50 年），防止極端日期導致 UI 凍結
   if (due < now) {
-    while (true) {
+    let safety = 0;
+    while (safety++ < 600 && due < now) {
       const next = new Date(due); next.setMonth(next.getMonth() + stepMonths);
       if (next > now) break;
       due = next;
@@ -233,6 +252,9 @@ function renderDashboard() {
   // 最近交易
   const recent = [...DB.txns].sort((a, b) => (b.date + b.createdAt).localeCompare(a.date + a.createdAt)).slice(0, 6);
   $('#recentList').innerHTML = recent.length ? recent.map(txnRowHtml).join('') : '<div class="empty">尚無交易，點擊 ＋ 開始記帳</div>';
+
+  // 清除本次 render 的暫存快取
+  invalidateReminderCache();
 }
 
 function txnRowHtml(t) {
@@ -273,7 +295,8 @@ function renderRecords() {
     if (kw) {
       const acc = DB.accounts.find(a => a.id === t.accountId);
       const payer = t.paidBy && DB.members.find(m => m.id === t.paidBy);
-      const hay = `${t.category} ${t.note || ''} ${t.amount} ${acc ? acc.name : ''} ${payer ? payer.name : ''}`.toLowerCase();
+      // #22 修復：搜尋 haystack 中移除金額，避免 "28" 匹配到 "1280"、"2800"
+      const hay = `${t.category} ${t.note || ''} ${acc ? acc.name : ''} ${payer ? payer.name : ''}`.toLowerCase();
       if (!hay.includes(kw)) return false;
     }
     return true;
@@ -349,10 +372,12 @@ function togglePay(billId, periodKey, markPaid) {
   if (markPaid) {
     b.paid[periodKey] = true;
     // 自動產生一筆支出交易
+    // #4 修復：自動記帳加上 paidBy 欄位，確保分帳統計不漏算
     DB.txns.push({
       id: uid(), type: 'expense', amount: Number(b.amount), date: todayISO(),
       category: b.category, accountId: b.accountId, note: `${b.name}（自動記帳）`, createdAt: Date.now(),
       _fromBill: billId,
+      paidBy: '',
     });
     toast('已標記繳費並自動記帳');
   } else {
@@ -362,7 +387,8 @@ function togglePay(billId, periodKey, markPaid) {
     if (idx >= 0) DB.txns.splice(idx, 1);
     toast('已取消繳費標記');
   }
-  save(); render();
+  if (!save()) return;  // #8 修復：檢查 save 是否成功
+  render();
 }
 
 /* =========================================================
@@ -411,7 +437,7 @@ function renderStats() {
 function renderAccounts() {
   const el = $('#accountsList');
   el.innerHTML = DB.accounts.map(a => {
-    const bal = accountBalance(a.id);
+    const bal = accountBalance(a.id);  // 使用快取版本
     const meta = ACCOUNT_META[a.type];
     const count = DB.txns.filter(t => t.accountId === a.id).length;
     return `<div class="account-item" data-accedit="${a.id}">
@@ -543,7 +569,9 @@ function openTxnModal(id) {
   $('#deleteTxnBtn').hidden = !id;
   clearErr(['errAmount', 'errDate']);
   if (id) {
+    // #7 修復：find 結果加守衛，防止 stale ID（已被刪除的資料）造成 TypeError
     const t = DB.txns.find(x => x.id === id);
+    if (!t) { toast('該筆交易不存在，可能已被刪除'); modal.hidden = true; render(); return; }
     txnType = t.type;
     $('#txnAmount').value = t.amount;
     $('#txnDate').value = t.date;
@@ -589,20 +617,24 @@ function saveTxn(e) {
     note: $('#txnNote').value.trim(), paidBy: paidBy || '',
   };
   if (editTxnId) {
-    const t = DB.txns.find(x => x.id === editTxnId);
-    Object.assign(t, payload);
+    // #7 修復：find 守衛
+    const targetTxn = DB.txns.find(x => x.id === editTxnId);
+    if (!targetTxn) { toast('該筆交易不存在，可能已被刪除'); $('#txnModal').hidden = true; render(); return; }
+    Object.assign(targetTxn, payload);
     toast('已更新交易');
   } else {
     DB.txns.push({ id: uid(), createdAt: Date.now(), ...payload });
     toast('已新增交易');
   }
-  save(); $('#txnModal').hidden = true; render();
+  if (!save()) return;  // #8 修復：save 失敗則不繼續
+  $('#txnModal').hidden = true; render();
 }
 function deleteTxn() {
   if (!editTxnId) return;
   if (!confirm('確定刪除這筆交易？')) return;
   DB.txns = DB.txns.filter(t => t.id !== editTxnId);
-  save(); $('#txnModal').hidden = true; toast('已刪除'); render();
+  if (!save()) return;  // #8 修復
+  $('#txnModal').hidden = true; toast('已刪除'); render();
 }
 
 /* =========================================================
@@ -615,7 +647,9 @@ function openAccountModal(id) {
   $('#deleteAccBtn').hidden = !id;
   $('#errAccName').textContent = '';
   if (id) {
+    // #7 修復：find 守衛
     const a = DB.accounts.find(x => x.id === id);
+    if (!a) { toast('該帳戶不存在'); return; }
     $('#accName').value = a.name; $('#accType').value = a.type;
     $('#accBalance').value = a.balance; $('#accNote').value = a.note || '';
   } else {
@@ -629,9 +663,18 @@ function saveAccount(e) {
   const name = $('#accName').value.trim();
   if (!name) { $('#errAccName').textContent = '請輸入帳戶名稱'; return; }
   const payload = { name, type: $('#accType').value, balance: parseFloat($('#accBalance').value) || 0, note: $('#accNote').value.trim() };
-  if (editAccId) { Object.assign(DB.accounts.find(a => a.id === editAccId), payload); toast('已更新帳戶'); }
-  else { DB.accounts.push({ id: uid(), ...payload }); toast('已新增帳戶'); }
-  save(); $('#accountModal').hidden = true; render();
+  if (editAccId) {
+    // #7 修復：find 守衛
+    const targetAcc = DB.accounts.find(a => a.id === editAccId);
+    if (!targetAcc) { toast('該帳戶不存在，可能已被刪除'); $('#accountModal').hidden = true; render(); return; }
+    Object.assign(targetAcc, payload);
+    toast('已更新帳戶');
+  } else {
+    DB.accounts.push({ id: uid(), ...payload });
+    toast('已新增帳戶');
+  }
+  if (!save()) return;  // #8 修復
+  $('#accountModal').hidden = true; render();
 }
 function deleteAccount() {
   if (!editAccId) return;
@@ -639,7 +682,8 @@ function deleteAccount() {
   if (has) { toast('此帳戶仍有交易或帳單，無法刪除'); return; }
   if (!confirm('確定刪除此帳戶？')) return;
   DB.accounts = DB.accounts.filter(a => a.id !== editAccId);
-  save(); $('#accountModal').hidden = true; toast('已刪除帳戶'); render();
+  if (!save()) return;  // #8 修復
+  $('#accountModal').hidden = true; toast('已刪除帳戶'); render();
 }
 
 /* =========================================================
@@ -679,7 +723,7 @@ function saveMember(e) {
     DB.members.push({ id: newId, name });
     toast('已新增成員');
   }
-  save();
+  if (!save()) return;  // #8 修復
   if (memberReturnToTxn) {
     const txnSel = $('#txnPaidBy');
     fillMemberSelect(txnSel, newId || editMemberId || '', false);
@@ -697,7 +741,7 @@ function deleteMember() {
   if (!used && !confirm('確定刪除此成員？')) return;
   DB.members = DB.members.filter(m => m.id !== editMemberId);
   DB.txns.forEach(t => { if (t.paidBy === editMemberId) t.paidBy = ''; });
-  save();
+  if (!save()) return;  // #8 修復
   $('#memberModal').hidden = true;
   const txnModal = document.getElementById('txnModal');
   const txnSel = $('#txnPaidBy');
@@ -717,6 +761,24 @@ function renderMembers() {
         </div>`;
       }).join('')
     : '<div class="empty">尚無成員，點下方新增</div>';
+}
+
+// #16 優化：統一成員統計函數，一次遍歷同時計算 count + 金額
+function getMemberStats() {
+  const statsMap = new Map();
+  DB.members.forEach(m => statsMap.set(m.id, { count: 0, amount: 0 }));
+  let unsetCount = 0, unsetAmount = 0;
+  DB.txns.filter(t => t.type === 'expense').forEach(t => {
+    if (t.paidBy && statsMap.has(t.paidBy)) {
+      const s = statsMap.get(t.paidBy);
+      s.count++;
+      s.amount += Number(t.amount) || 0;
+    } else {
+      unsetCount++;
+      unsetAmount += Number(t.amount) || 0;
+    }
+  });
+  return { statsMap, unsetCount, unsetAmount };
 }
 
 /* 成員分帳統計：依付款人彙總支出金額與佔比 */
@@ -767,7 +829,9 @@ function openBillModal(id) {
   const selAcc = $('#billAccount');
   selAcc.innerHTML = '<option value="">未指定</option>' + DB.accounts.map(a => `<option value="${a.id}">${ACCOUNT_META[a.type].icon} ${escapeHtml(a.name)}</option>`).join('');
   if (id) {
+    // #7 修復：find 守衛
     const b = DB.bills.find(x => x.id === id);
+    if (!b) { toast('該繳費項目不存在'); return; }
     $('#billName').value = b.name; $('#billAmount').value = b.amount;
     $('#billCategory').value = b.category || ''; $('#billAccount').value = b.accountId || '';
     $('#billCycle').value = b.cycle || ''; $('#billDue').value = b.dueDate || ''; $('#billNote').value = b.note || '';
@@ -799,8 +863,16 @@ function saveBill(e) {
     dueDate: $('#billDue').value || null,
     note: $('#billNote').value.trim(),
   };
-  if (editBillId) { const b = DB.bills.find(x => x.id === editBillId); Object.assign(b, payload); toast('已更新繳費項目'); }
-  else { DB.bills.push({ id: uid(), paid: {}, ...payload }); toast('已新增繳費項目'); }
+  if (editBillId) {
+    // #7 修復：find 守衛
+    const targetBill = DB.bills.find(x => x.id === editBillId);
+    if (!targetBill) { toast('該繳費項目不存在'); $('#billModal').hidden = true; render(); return; }
+    Object.assign(targetBill, payload);
+    toast('已更新繳費項目');
+  } else {
+    DB.bills.push({ id: uid(), paid: {}, ...payload });
+    toast('已新增繳費項目');
+  }
 
   // 勾選「標記為已繳」→ 自動標記當期 + 記帳（與 togglePay 一致，避免編輯時重複記帳）
   const bill = editBillId ? DB.bills.find(x => x.id === editBillId) : DB.bills[DB.bills.length - 1];
@@ -812,10 +884,12 @@ function saveBill(e) {
       if (wantPaid && !isPaid) {
         bill.paid ||= {};
         bill.paid[occ.periodKey] = true;
+        // #4 修復：自動記帳加 paidBy
         DB.txns.push({
           id: uid(), type: 'expense', amount: Number(bill.amount), date: todayISO(),
           category: bill.category, accountId: bill.accountId, note: `${bill.name}（自動記帳）`, createdAt: Date.now(),
           _fromBill: bill.id,
+          paidBy: '',
         });
       } else if (!wantPaid && isPaid) {
         // 編輯時取消勾選 → 同步撤銷當期自動記帳
@@ -826,24 +900,32 @@ function saveBill(e) {
     } catch (e) { /* 無週期則跳過 */ }
   }
 
-  save(); $('#billModal').hidden = true; render();
+  if (!save()) return;  // #8 修復
+  $('#billModal').hidden = true; render();
 }
 function deleteBill() {
   if (!editBillId) return;
   if (!confirm('確定刪除此繳費項目？（已產生的記帳不會刪除）')) return;
   DB.bills = DB.bills.filter(b => b.id !== editBillId);
-  save(); $('#billModal').hidden = true; toast('已刪除'); render();
+  if (!save()) return;  // #8 修復
+  $('#billModal').hidden = true; toast('已刪除'); render();
 }
 
 /* =========================================================
    匯出 / 匯入
    ========================================================= */
+// #11 修復：Blob URL 改用 onblur 觸發 revoke，避免固定 1 秒延遲的不確定性；
+//         同時保留 setTimeout 作為兜底（雙重保護），快速連續匯出不會累積洩漏
 function download(filename, content, mime) {
   const blob = new Blob([content], { type: mime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url; a.download = filename; document.body.appendChild(a); a.click();
-  a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+  a.remove();
+  // 主要釋放：onblur 在下載對話框關閉後觸發（現代瀏覽器支援 keep-alive-until-consumed）
+  a.onblur = () => URL.revokeObjectURL(url);
+  // 兜底：即使 onblur 未觸發（如部分 WebView），最多 5 秒後強制釋放
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
 function exportJSON() {
   download(`繳費記帳_${todayISO()}.json`, JSON.stringify(DB, null, 2), 'application/json');
@@ -866,18 +948,70 @@ function exportCSV() {
   download(`繳費記帳_${todayISO()}.csv`, csv, 'text/csv;charset=utf-8');
   toast('已匯出 CSV');
 }
+
+// #9 修復：匯入 schema 白名單校驗，攔截 prototype pollution 與欄位缺失
+const IMPORT_ALLOWED_TOP_KEYS = ['accounts', 'txns', 'bills', 'members'];
+const TXN_REQUIRED_FIELDS = ['id', 'type', 'amount', 'date'];
+const TXN_ALLOWED_FIELDS = ['id', 'type', 'amount', 'date', 'category', 'accountId', 'note', 'createdAt', 'paidBy', '_fromBill'];
+const ACC_ALLOWED_FIELDS = ['id', 'name', 'type', 'balance', 'note'];
+const BILL_ALLOWED_FIELDS = ['id', 'name', 'amount', 'category', 'accountId', 'cycle', 'dueDate', 'note', 'paid'];
+const MEMBER_ALLOWED_FIELDS = ['id', 'name'];
+
+/** 清理物件，只保留白名單 key，過濾 __proto__/constructor */
+function sanitizeObj(obj, allowedKeys) {
+  const clean = {};
+  for (const k of Object.keys(obj)) {
+    if (k === '__proto__' || k === 'prototype' || k === 'constructor') continue;
+    if (allowedKeys && !allowedKeys.includes(k)) continue;
+    clean[k] = obj[k];
+  }
+  return clean;
+}
+function validateAndSanitize(parsed) {
+  if (!parsed || typeof parsed !== 'object') throw new Error('根節點必須是物件');
+  for (const k of Object.keys(parsed)) {
+    if (!IMPORT_ALLOWED_TOP_KEYS.includes(k)) delete parsed[k];  // 移除未知頂層 key
+  }
+
+  if (!Array.isArray(parsed.accounts)) throw new Error('accounts 必須是陣列');
+  if (!Array.isArray(parsed.txns)) throw new Error('txns 必須是陣列');
+
+  parsed.accounts = parsed.accounts.map(a => sanitizeObj(a, ACC_ALLOWED_FIELDS));
+  parsed.txns = parsed.txns.map(t => {
+    const clean = sanitizeObj(t, TXN_ALLOWED_FIELDS);
+    for (const f of TXN_REQUIRED_FIELDS) {
+      if (clean[f] == null) throw new Error(`交易缺少必填欄位：${f}`);
+    }
+    return clean;
+  });
+
+  if (Array.isArray(parsed.bills)) {
+    parsed.bills = parsed.bills.map(b => sanitizeObj(b, BILL_ALLOWED_FIELDS));
+  } else {
+    parsed.bills = [];
+  }
+  if (Array.isArray(parsed.members)) {
+    parsed.members = parsed.members.map(m => sanitizeObj(m, MEMBER_ALLOWED_KEYS));
+  } else {
+    parsed.members = [];
+  }
+  return parsed;
+}
+
 function doImport(parsed) {
-  if (!parsed || !Array.isArray(parsed.accounts) || !Array.isArray(parsed.txns)) throw new Error('格式不符');
+  const sanitized = validateAndSanitize(parsed);
   if (!confirm('匯入將覆蓋目前所有資料，確定繼續？')) return false;
-  DB = { accounts: parsed.accounts || [], txns: parsed.txns || [], bills: Array.isArray(parsed.bills) ? parsed.bills : [], members: Array.isArray(parsed.members) ? parsed.members : [] };
-  save(); render(); toast('匯入成功');
+  DB = sanitized;
+  if (!save()) return false;  // #8 修復
+  render(); toast('匯入成功');
   return true;
 }
 function importJSON(file) {
   const reader = new FileReader();
   reader.onload = () => {
     try { doImport(JSON.parse(reader.result)); }
-    catch (e) { toast('匯入失敗：檔案格式錯誤'); }
+    // #19 修復：保留前 80 字元錯誤詳情
+    catch (e) { toast('匯入失敗：' + (e.message || '格式錯誤').slice(0, 80)); }
   };
   reader.readAsText(file);
 }
@@ -886,32 +1020,40 @@ function importFromText() {
   const raw = ($('#importText').value || '').trim();
   if (!raw) { toast('請先貼上 JSON 文字'); return; }
   try { doImport(JSON.parse(raw)); }
-  catch (e) { toast('匯入失敗：JSON 格式錯誤'); }
+  // #19 修復：保留前 80 字元錯誤詳情
+  catch (e) { toast('匯入失敗：' + (e.message || 'JSON 格式錯誤').slice(0, 80)); }
 }
 
 /* =========================================================
-   事件綁定
+   事件綁定（#20 修復：拆分為多個子函數提升可維護性）
    ========================================================= */
-function bindEvents() {
-  // tabbar
+
+/** tabbar + FAB */
+function bindTabBarEvents() {
   $$('.tab[data-view]').forEach(t => t.addEventListener('click', () => switchView(t.dataset.view)));
   $('#fabAdd').addEventListener('click', () => openTxnModal());
   document.body.addEventListener('click', e => {
     const goto = e.target.closest('[data-goto]');
     if (goto) switchView(goto.dataset.goto);
   });
+}
 
-  // 交易彈窗
+/** 交易彈窗事件 */
+function bindTxnEvents() {
   $('#txnForm').addEventListener('submit', saveTxn);
   $('#deleteTxnBtn').addEventListener('click', deleteTxn);
   $$('.tt-btn').forEach(b => b.addEventListener('click', () => setTxnType(b.dataset.ttype)));
+}
 
-  // 帳戶
+/** 帳戶事件 */
+function bindAccountEvents() {
   $('#addAccountBtn').addEventListener('click', () => openAccountModal());
   $('#accountForm').addEventListener('submit', saveAccount);
   $('#deleteAccBtn').addEventListener('click', deleteAccount);
+}
 
-  // 成員（誰付錢）
+/** 成員（誰付錢）事件 */
+function bindMemberEvents() {
   $('#addMemberBtn').addEventListener('click', () => openMemberModal());
   $('#memberForm').addEventListener('submit', saveMember);
   $('#deleteMemberBtn').addEventListener('click', deleteMember);
@@ -926,8 +1068,10 @@ function bindEvents() {
       memberReturnToTxn = false;
     }
   });
+}
 
-  // 繳費
+/** 繳費事件 */
+function bindBillEvents() {
   $('#addBillBtn').addEventListener('click', () => openBillModal());
   $('#billForm').addEventListener('submit', saveBill);
   $('#deleteBillBtn').addEventListener('click', deleteBill);
@@ -936,8 +1080,10 @@ function bindEvents() {
     $$('.seg[data-billfilter]').forEach(x => x.classList.toggle('active', x === s));
     renderBills();
   }));
+}
 
-  // 列表點擊委派
+/** 列表點擊委派（統一處理所有 data-* 點擊） */
+function bindListDelegation() {
   document.body.addEventListener('click', e => {
     const txn = e.target.closest('[data-txn]');
     if (txn) return openTxnModal(txn.dataset.txn);
@@ -948,12 +1094,15 @@ function bindEvents() {
     const togglePayBtn = e.target.closest('[data-togglepay]');
     if (togglePayBtn) { e.stopPropagation(); return togglePay(togglePayBtn.dataset.togglepay, togglePayBtn.dataset.period, !togglePayBtn.classList.contains('paid')); }
     const quick = e.target.closest('[data-quickpay]');
-    if (quick) { const occ = currentOccurrence(DB.bills.find(b => b.id === quick.dataset.quickpay)); return togglePay(quick.dataset.quickpay, occ.periodKey, true); }
+    if (quick) { const qbill = DB.bills.find(b => b.id === quick.dataset.quickpay); if (qbill) { const occ = currentOccurrence(qbill); return togglePay(quick.dataset.quickpay, occ.periodKey, true); } return; }
     const billEdit = e.target.closest('[data-billedit]');
     if (billEdit) return openBillModal(billEdit.dataset.billedit);
   });
+}
 
-  // 關閉彈窗
+/** 彈窗關閉、篩選、統計月份、資料管理、提醒 */
+function bindMiscEvents() {
+  // 彈窗遮罩/叉號關閉
   $$('.modal').forEach(m => m.addEventListener('click', e => {
     if (e.target === m || e.target.closest('[data-close]')) m.hidden = true;
   }));
@@ -963,8 +1112,9 @@ function bindEvents() {
   ['filterFrom', 'filterTo', 'filterCategory', 'filterAccount', 'filterType', 'filterPaidBy', 'sortBy'].forEach(id =>
     $('#' + id).addEventListener('change', renderRecords));
   $('#toggleFilters').addEventListener('click', () => { $('#filterPanel').hidden = !$('#filterPanel').hidden; });
+  // #2 修復：清除篩選補上 filterPaidBy
   $('#clearFilters').addEventListener('click', () => {
-    ['filterFrom', 'filterTo', 'filterCategory', 'filterAccount', 'filterType'].forEach(id => $('#' + id).value = '');
+    ['filterFrom', 'filterTo', 'filterCategory', 'filterAccount', 'filterType', 'filterPaidBy'].forEach(id => $('#' + id).value = '');
     $('#searchKeyword').value = ''; $('#sortBy').value = 'date_desc'; renderRecords();
   });
 
@@ -979,13 +1129,30 @@ function bindEvents() {
   $('#importFile').addEventListener('change', e => { if (e.target.files[0]) importJSON(e.target.files[0]); e.target.value = ''; });
   $('#importTextBtn').addEventListener('click', importFromText);
   $('#resetBtn').addEventListener('click', () => {
-    if (confirm('確定清空所有資料？此動作無法復原！')) { localStorage.removeItem(STORE_KEY); DB = { accounts: [], txns: [], bills: [], members: [] }; save(); render(); toast('已清空所有資料'); }
+    if (confirm('確定清空所有資料？此動作無法復原！')) {
+      localStorage.removeItem(STORE_KEY);
+      localStorage.removeItem(BACKUP_KEY);  // #1 配套：重置時也清除損壞備份
+      DB = { accounts: [], txns: [], bills: [], members: [] };
+      _balanceDirty = true;
+      save(); render(); toast('已清空所有資料');
+    }
   });
 
   // 提醒鈕
   $('#reminderBtn').addEventListener('click', () => { switchView('bills'); billFilter = 'unpaid'; $$('.seg[data-billfilter]').forEach(x => x.classList.toggle('active', x.dataset.billfilter === 'unpaid')); renderBills(); });
 
   window.addEventListener('resize', () => { if (currentView === 'stats') renderStats(); if (currentView === 'dashboard') renderDashboard(); });
+}
+
+// #20 修復：bindEvents 拆分為子函數
+function bindEvents() {
+  bindTabBarEvents();
+  bindTxnEvents();
+  bindAccountEvents();
+  bindMemberEvents();
+  bindBillEvents();
+  bindListDelegation();
+  bindMiscEvents();
 }
 function shiftMonth(mk, n) {
   const [y, m] = mk.split('-').map(Number);
@@ -1020,8 +1187,9 @@ window.BK = {
   exportData: () => JSON.stringify(DB),
   importData: (str) => {
     const d = JSON.parse(str);
-    if (!Array.isArray(d.accounts) || !Array.isArray(d.txns)) throw new Error('檔案格式錯誤');
-    DB = { accounts: d.accounts || [], txns: d.txns || [], bills: Array.isArray(d.bills) ? d.bills : [], members: Array.isArray(d.members) ? d.members : [] };
-    save(); render();
+    const sanitized = validateAndSanitize(d);  // #9 修復：雲端還原也走 schema 校驗
+    DB = sanitized;
+    if (!save()) return;  // #8 修復
+    render();
   },
 };

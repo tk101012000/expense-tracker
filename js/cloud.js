@@ -1,6 +1,7 @@
 /* =========================================================
    雲端備份模組  ·  客戶端 OAuth2 PKCE（無後端、無密鑰暴露）
    支援 Google Drive（appDataFolder 私人空間）與 Dropbox
+   v3.14 — 審計修復版（#3 憑證處理 / #12 併發鎖）
    ========================================================= */
 (function () {
   'use strict';
@@ -60,10 +61,15 @@
   async function connect() {
     const provider = $('#cloudProvider').value;
     const clientId = $('#cloudClientId').value.trim();
+    // #3 修復：clientSecret 不再長期存入 localStorage；
+    //         只在本次 session 中暫存（用 sessionStorage），僅用於一次 token exchange
     const clientSecret = $('#cloudClientSecret').value.trim();
     if (!clientId) { toast('請先填入 ' + PROVIDERS[provider].name + ' 的 Client ID / App Key'); return; }
+
     state.provider = provider; state.clientId = clientId;
-    if (clientSecret) state.clientSecret = clientSecret;
+    // #3 修復：secret 存 sessionStorage（關閉 tab 即消失），不寫入 localStorage
+    if (clientSecret) sessionStorage.setItem('bk_cs', clientSecret);
+    else sessionStorage.removeItem('bk_cs');
     saveState();
 
     const verifier = randomStr(64);
@@ -116,8 +122,9 @@
       code, client_id: state.clientId, code_verifier: verifier,
       grant_type: 'authorization_code', redirect_uri: REDIRECT,
     });
-    // v3: 始終傳送 client_secret（若用戶已填寫）；Google 部分專案設定會強制要求
-    if (state.clientSecret) body.append('client_secret', state.clientSecret);
+    // #3 修復：從 sessionStorage 讀取 secret（不從 localStorage），用完即棄
+    const cs = sessionStorage.getItem('bk_cs');
+    if (cs) body.append('client_secret', cs);
     const res = await fetch(p.tokenUrl, {
       method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body,
     });
@@ -129,19 +136,39 @@
     state.accessToken = tok.access_token;
     state.refreshToken = tok.refresh_token || state.refreshToken;
     state.expiresAt = Date.now() + (tok.expires_in || 3600) * 1000;
+    // #3 修復：saveState 不再包含 clientSecret（因為根本沒存進去）
     saveState();
     refreshUI();
   }
 
+  /* #12 修復：ensureToken 加入 in-flight 鎖，防止並發 refresh 導致 refresh token 失效
+     JS 是 single-threaded 但 async/await 之間會 yield 事件迴圈，
+     快速連續觸發「上傳+下載」可能同時送出兩次 refresh 請求 */
+  let _refreshing = null;
+
   async function ensureToken() {
     if (tokenValid()) return state.accessToken;
-    if (!state.refreshToken) { await disconnect(false); throw new Error('憑證已過期，請重新連接'); }
+    if (_refreshing) return _refreshing;  // 已有刷新在飛行中，直接共用同一個 Promise
+
+    if (!state.refreshToken) {
+      await disconnect(false);
+      throw new Error('憑證已過期，請重新連接');
+    }
+
+    // 啟動刷新，鎖定 _refreshing
+    _refreshing = _doRefresh().finally(() => { _refreshing = null; });
+    return _refreshing;
+  }
+
+  /** 實際執行 token 刷新的內部函數 */
+  async function _doRefresh() {
     const p = PROVIDERS[state.provider];
     const body = new URLSearchParams({
       grant_type: 'refresh_token', refresh_token: state.refreshToken, client_id: state.clientId,
     });
-    // v3: 始終傳送 client_secret（若用戶已填寫）
-    if (state.clientSecret) body.append('client_secret', state.clientSecret);
+    // #3 修復：secret 從 sessionStorage 取
+    const cs = sessionStorage.getItem('bk_cs');
+    if (cs) body.append('client_secret', cs);
     const res = await fetch(p.tokenUrl, {
       method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body,
     });
@@ -203,8 +230,8 @@
     } else {
       const boundary = '----billerboundary';
       const meta = { name: 'billkeeper_backup.json', parents: ['appDataFolder'] };
-      const body = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}` +
-        `\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${data}\r\n--${boundary}--\r\n`;
+      const body = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}`
+        + `\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${data}\r\n--${boundary}--\r\n`;
       res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
         method: 'POST', headers: { 'Authorization': 'Bearer ' + tok, 'Content-Type': `multipart/related; boundary=${boundary}` }, body,
       });
