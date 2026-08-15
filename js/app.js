@@ -108,7 +108,7 @@ const ACCOUNT_META = {
 const CHART_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#f59e0b', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#14b8a6', '#6366f1', '#a855f7', '#eab308', '#64748b'];
 
 /* ---------- 版本資訊 ---------- */
-const APP_VERSION = 'yu-v3.43';
+const APP_VERSION = 'yu-v3.44';
 const APP_BUILD_DATE = '2026-08-15';
 
 /* ---------- 工具 ---------- */
@@ -533,6 +533,7 @@ function togglePay(billId, periodKey, markPaid) {
    統計
    ========================================================= */
 let statMonth = monthKey();
+let billStatMonth = null;   // 繳費統計月份選擇：null=全年，1-12=指定月份
 function categoryBreakdown(mk) {
   const map = {};
   DB.txns.forEach(t => {
@@ -592,6 +593,47 @@ function billMonthlyProjection(ym) {
   }, 0);
 }
 
+// 繳費統計月份選擇器的前後切換（順序：全年 → 1月 → … → 12月 → 全年）
+function shiftBillStatMonth(dir) {
+  const seq = [null, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+  let i = seq.indexOf(billStatMonth);
+  i = (i + dir + seq.length) % seq.length;
+  return seq[i];
+}
+
+// 依類別彙總「指定月份」預估（m: 1-12）
+function billCategoryMonthly(m) {
+  const map = {};
+  DB.bills.forEach(b => {
+    if (!b.amount || !b.cycle) return;
+    const allowed = (b.months && b.months.length) ? b.months : null;
+    if (allowed && !allowed.includes(m)) return;
+    const perYear = b.cycle === 'monthly' ? 12 : b.cycle === 'quarterly' ? 4 : 1;
+    const c = b.category || '未分類';
+    map[c] = (map[c] || 0) + b.amount * perYear / 12;
+  });
+  return Object.entries(map).map(([name, value]) => ({ name, value: Math.round(value * 100) / 100 }))
+    .sort((a, b) => b.value - a.value);
+}
+
+// 依扣款帳戶彙總「指定月份」預估（m: 1-12）
+function billAccountMonthly(m) {
+  const map = {};
+  DB.bills.forEach(b => {
+    if (!b.amount || !b.cycle) return;
+    const allowed = (b.months && b.months.length) ? b.months : null;
+    if (allowed && !allowed.includes(m)) return;
+    const perYear = b.cycle === 'monthly' ? 12 : b.cycle === 'quarterly' ? 4 : 1;
+    const key = b.accountId || '';
+    map[key] = (map[key] || 0) + b.amount * perYear / 12;
+  });
+  return Object.entries(map).map(([id, value]) => {
+    let name = '未指定帳戶';
+    if (id) { const a = DB.accounts.find(x => x.id === id); name = a ? a.name : '已刪除帳戶'; }
+    return { id, name, value: Math.round(value * 100) / 100 };
+  }).sort((a, b) => b.value - a.value);
+}
+
 // 本期待繳（未繳且本月 active 的項目）
 function billsCurrentPeriodUnpaid() {
   return DB.bills.filter(b => {
@@ -649,36 +691,76 @@ function renderBillRank(list, elId, iconFn) {
 }
 
 function renderBillStats() {
-  const annual = DB.bills.reduce((s, b) => s + billAnnualCost(b), 0);
-  $('#billAnnual').textContent = fmtMoney(annual);
-  $('#billMonthlyAvg').textContent = '月均 ' + fmtMoney(annual / 12);
-  const due = billsCurrentPeriodUnpaid();
-  $('#billDue').textContent = fmtMoney(due.reduce((s, b) => s + (Number(b.amount) || 0), 0));
-  $('#billCount').textContent = DB.bills.length;
+  const m = billStatMonth;            // null = 全年；1-12 = 指定月份
+  const monthLabel = m ? m + '月' : '全年';
+  $('#billStatMonthLabel').textContent = monthLabel;
+  const curYear = new Date().getFullYear();
 
-  // 近 12 個月預估
+  if (m) {
+    // ---- 指定月份視圖 ----
+    const ym = curYear + '-' + String(m).padStart(2, '0');
+    const monthTotal = Math.round(billMonthlyProjection(ym));
+    $('#billAnnual').textContent = fmtMoney(monthTotal);
+    $('#billAnnualLabel').textContent = monthLabel + '預估繳費';
+    $('#billMonthlyAvg').textContent = '該月預估';
+    const active = DB.bills.filter(b => {
+      const allowed = (b.months && b.months.length) ? b.months : null;
+      return !(allowed && !allowed.includes(m));
+    });
+    $('#billDue').textContent = fmtMoney(active.reduce((s, b) => s + (Number(b.amount) || 0), 0));
+    $('#billDueLabel').textContent = monthLabel + '預估';
+    $('#billCount').textContent = active.length;
+    $('#billCountLabel').textContent = monthLabel + '項目';
+
+    const cats = billCategoryMonthly(m);
+    drawDoughnut($('#billCatDoughnut'), cats, $('#billCatLegend'), { centerLabel: monthLabel, emptyText: '該月尚無繳費項目' });
+    $('#billCatTitle').textContent = '類別佔比（' + monthLabel + '）';
+    renderBillRank(cats, '#billCatRank');
+    renderBillRank(billAccountMonthly(m), '#billAccRank', c => {
+      const a = c.id ? DB.accounts.find(x => x.id === c.id) : null;
+      return a && ACCOUNT_META[a.type] ? ACCOUNT_META[a.type].icon : '';
+    });
+    $('#billAccRankTitle').textContent = '扣款帳戶分佈（' + monthLabel + '）';
+    const top = active.map(b => ({ name: b.name, value: billAnnualCost(b), icon: CAT_ICON[b.category] || '' }))
+      .sort((a, b) => b.value - a.value).slice(0, 5);
+    renderBillRank(top, '#billTopList', c => c.icon);
+    $('#billTopTitle').textContent = '金額最高項目 Top 5（' + monthLabel + '）';
+  } else {
+    // ---- 全年視圖（原邏輯） ----
+    const annual = DB.bills.reduce((s, b) => s + billAnnualCost(b), 0);
+    $('#billAnnual').textContent = fmtMoney(annual);
+    $('#billAnnualLabel').textContent = '年度預估繳費';
+    $('#billMonthlyAvg').textContent = '月均 ' + fmtMoney(annual / 12);
+    const due = billsCurrentPeriodUnpaid();
+    $('#billDue').textContent = fmtMoney(due.reduce((s, b) => s + (Number(b.amount) || 0), 0));
+    $('#billDueLabel').textContent = '本期待繳';
+    $('#billCount').textContent = DB.bills.length;
+    $('#billCountLabel').textContent = '繳費項目';
+
+    const cats = billCategoryAnnual();
+    drawDoughnut($('#billCatDoughnut'), cats, $('#billCatLegend'), { centerLabel: '年度', emptyText: '尚無繳費項目' });
+    $('#billCatTitle').textContent = '類別佔比（年度）';
+    renderBillRank(cats, '#billCatRank');
+    renderBillRank(billAccountAnnual(), '#billAccRank', c => {
+      const a = c.id ? DB.accounts.find(x => x.id === c.id) : null;
+      return a && ACCOUNT_META[a.type] ? ACCOUNT_META[a.type].icon : '';
+    });
+    $('#billAccRankTitle').textContent = '扣款帳戶分佈';
+    const top = DB.bills.map(b => ({ name: b.name, value: billAnnualCost(b), icon: CAT_ICON[b.category] || '' }))
+      .sort((a, b) => b.value - a.value).slice(0, 5);
+    renderBillRank(top, '#billTopList', c => c.icon);
+    $('#billTopTitle').textContent = '金額最高項目 Top 5';
+  }
+
+  // 週期分佈（年度金額，不隨月份切換改變）
+  const cycles = billCycleAnnual();
+  drawDoughnut($('#billCycleDoughnut'), cycles, $('#billCycleLegend'), { centerLabel: '年度', emptyText: '尚無週期設定' });
+  // 近 12 個月預估（年度視角，不隨月份切換改變）
   const months = [];
   const now = new Date();
   for (let i = 11; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`); }
-  const trend = months.map(m => ({ label: m.slice(5), value: Math.round(billMonthlyProjection(m)) }));
+  const trend = months.map(mm => ({ label: mm.slice(5), value: Math.round(billMonthlyProjection(mm)) }));
   drawBars($('#billTrend'), trend);
-
-  // 類別佔比（年度）
-  const cats = billCategoryAnnual();
-  drawDoughnut($('#billCatDoughnut'), cats, $('#billCatLegend'), { centerLabel: '年度', emptyText: '尚無繳費項目' });
-  // 週期分佈（年度金額）
-  const cycles = billCycleAnnual();
-  drawDoughnut($('#billCycleDoughnut'), cycles, $('#billCycleLegend'), { centerLabel: '年度', emptyText: '尚無週期設定' });
-
-  renderBillRank(cats, '#billCatRank');
-  renderBillRank(billAccountAnnual(), '#billAccRank', c => {
-    const a = c.id ? DB.accounts.find(x => x.id === c.id) : null;
-    return a && ACCOUNT_META[a.type] ? ACCOUNT_META[a.type].icon : '';
-  });
-  // 金額最高項目 Top 5（依單筆年度預估）
-  const top = DB.bills.map(b => ({ name: b.name, value: billAnnualCost(b), icon: CAT_ICON[b.category] || '' }))
-    .sort((a, b) => b.value - a.value).slice(0, 5);
-  renderBillRank(top, '#billTopList', c => c.icon);
 }
 
 /* =========================================================
@@ -2125,6 +2207,8 @@ function bindMiscEvents() {
   // 統計月份
   $('#prevMonth').addEventListener('click', () => { statMonth = shiftMonth(statMonth, -1); renderStats(); });
   $('#nextMonth').addEventListener('click', () => { statMonth = shiftMonth(statMonth, 1); renderStats(); });
+  $('#billStatPrev').addEventListener('click', () => { billStatMonth = shiftBillStatMonth(-1); renderBillStats(); });
+  $('#billStatNext').addEventListener('click', () => { billStatMonth = shiftBillStatMonth(1); renderBillStats(); });
 
   // 資料管理
   $('#exportCsvBtn').addEventListener('click', exportCSV);

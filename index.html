@@ -180,26 +180,31 @@
 
       <!-- ============ 繳費統計 ============ -->
       <section class="view" data-view="billstats" hidden>
+        <div class="month-picker">
+          <button class="icon-btn" id="billStatPrev" type="button">◀</button>
+          <span id="billStatMonthLabel">全年</span>
+          <button class="icon-btn" id="billStatNext" type="button">▶</button>
+        </div>
         <div class="summary-cards">
           <div class="card balance-card">
-            <p class="card-label">年度預估繳費</p>
+            <p class="card-label" id="billAnnualLabel">年度預估繳費</p>
             <p class="card-value" id="billAnnual">¥0</p>
             <p class="card-hint" id="billMonthlyAvg">月均 ¥0</p>
           </div>
           <div class="mini-cards">
             <div class="card mini expense">
-              <p class="card-label">本期待繳</p>
+              <p class="card-label" id="billDueLabel">本期待繳</p>
               <p class="card-value" id="billDue">¥0</p>
             </div>
             <div class="card mini">
-              <p class="card-label">繳費項目</p>
+              <p class="card-label" id="billCountLabel">繳費項目</p>
               <p class="card-value" id="billCount">0</p>
             </div>
           </div>
         </div>
 
         <div class="card">
-          <div class="card-head"><h2>類別佔比（年度）</h2></div>
+          <div class="card-head"><h2 id="billCatTitle">類別佔比（年度）</h2></div>
           <canvas id="billCatDoughnut" height="220"></canvas>
           <div id="billCatLegend" class="legend"></div>
         </div>
@@ -216,17 +221,17 @@
         </div>
 
         <div class="card">
-          <div class="card-head"><h2>類別排行</h2></div>
+          <div class="card-head"><h2 id="billCatRankTitle">類別排行</h2></div>
           <div id="billCatRank" class="rank-list"></div>
         </div>
 
         <div class="card">
-          <div class="card-head"><h2>扣款帳戶分佈</h2></div>
+          <div class="card-head"><h2 id="billAccRankTitle">扣款帳戶分佈</h2></div>
           <div id="billAccRank" class="rank-list"></div>
         </div>
 
         <div class="card">
-          <div class="card-head"><h2>金額最高項目 Top 5</h2></div>
+          <div class="card-head"><h2 id="billTopTitle">金額最高項目 Top 5</h2></div>
           <div id="billTopList" class="rank-list"></div>
         </div>
       </section>
@@ -656,7 +661,7 @@
   <!-- Toast -->
   <div id="toast" class="toast" hidden></div>
 
-  <script src="js/cloud.js?v=yu-v3.43"></script>
-  <script src="js/app.js?v=yu-v3.43"></script>
+  <script src="js/cloud.js?v=yu-v3.44"></script>
+  <script src="js/app.js?v=yu-v3.44"></script>
 </body>
 </html>
