@@ -178,6 +178,59 @@
         <button class="fab secondary" id="addBillBtn">＋ 新增繳費項目</button>
       </section>
 
+      <!-- ============ 繳費統計 ============ -->
+      <section class="view" data-view="billstats" hidden>
+        <div class="summary-cards">
+          <div class="card balance-card">
+            <p class="card-label">年度預估繳費</p>
+            <p class="card-value" id="billAnnual">¥0</p>
+            <p class="card-hint" id="billMonthlyAvg">月均 ¥0</p>
+          </div>
+          <div class="mini-cards">
+            <div class="card mini expense">
+              <p class="card-label">本期待繳</p>
+              <p class="card-value" id="billDue">¥0</p>
+            </div>
+            <div class="card mini">
+              <p class="card-label">繳費項目</p>
+              <p class="card-value" id="billCount">0</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h2>類別佔比（年度）</h2></div>
+          <canvas id="billCatDoughnut" height="220"></canvas>
+          <div id="billCatLegend" class="legend"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h2>週期分佈（年度金額）</h2></div>
+          <canvas id="billCycleDoughnut" height="220"></canvas>
+          <div id="billCycleLegend" class="legend"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h2>近 12 個月預估繳費</h2></div>
+          <canvas id="billTrend" height="220"></canvas>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h2>類別排行</h2></div>
+          <div id="billCatRank" class="rank-list"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h2>扣款帳戶分佈</h2></div>
+          <div id="billAccRank" class="rank-list"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h2>金額最高項目 Top 5</h2></div>
+          <div id="billTopList" class="rank-list"></div>
+        </div>
+      </section>
+
       <!-- ============ 統計 ============ -->
       <section class="view" data-view="stats" hidden>
         <div class="month-picker">
@@ -357,6 +410,7 @@
       <button class="tab" data-view="records"><span>📒</span>記帳</button>
       <button class="tab fab-tab" id="fabAdd">＋</button>
       <button class="tab" data-view="bills"><span>📅</span>繳費</button>
+      <button class="tab" data-view="billstats"><span>📑</span>繳費統計</button>
       <button class="tab" data-view="stats"><span>📊</span>統計</button>
       <button class="tab" data-view="accounts"><span>💳</span>帳戶</button>
     </nav>
@@ -495,6 +549,10 @@
           </label>
         </div>
         <small class="err" id="errBillDue"></small>
+        <label class="field">發生月份（可多選，預設全年）
+          <div class="month-chips" id="billMonths"></div>
+          <small class="hint">留空＝每月都發生；勾選後只會在選取的月份列為「待繳」並提醒。</small>
+        </label>
         <label class="field">備註
           <input type="text" id="billNote" maxlength="40" placeholder="選填" />
         </label>
@@ -598,7 +656,7 @@
   <!-- Toast -->
   <div id="toast" class="toast" hidden></div>
 
-  <script src="js/cloud.js?v=yu-v3.38"></script>
-  <script src="js/app.js?v=yu-v3.38"></script>
+  <script src="js/cloud.js?v=yu-v3.43"></script>
+  <script src="js/app.js?v=yu-v3.43"></script>
 </body>
 </html>

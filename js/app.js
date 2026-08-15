@@ -108,8 +108,8 @@ const ACCOUNT_META = {
 const CHART_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#f59e0b', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#14b8a6', '#6366f1', '#a855f7', '#eab308', '#64748b'];
 
 /* ---------- 版本資訊 ---------- */
-const APP_VERSION = 'yu-v3.38';
-const APP_BUILD_DATE = '2026-07-21';
+const APP_VERSION = 'yu-v3.43';
+const APP_BUILD_DATE = '2026-08-15';
 
 /* ---------- 工具 ---------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -134,6 +134,12 @@ const fmtMoneyCur = (n, code) => {
 const curBadge = (code) => (code && code !== DB.settings.currency) ? `<small class="cur-badge">${code}</small>` : '';
 const fmtDate = d => { const dt = new Date(d + 'T00:00:00'); return `${dt.getMonth() + 1}/${dt.getDate()}`; };
 const escapeHtml = s => String(s ?? '').replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+
+// 將月份陣列轉成顯示文字（[6,7,8] → 「6月、7月、8月」；空/未設 → 「全年」）
+function monthLabels(arr) {
+  if (!arr || !arr.length) return '全年';
+  return arr.slice().sort((a, b) => a - b).map(m => m + '月').join('、');
+}
 
 function toast(msg) {
   const t = $('#toast');
@@ -253,7 +259,7 @@ function monthTotals(mk) {
    導覽
    ========================================================= */
 let currentView = 'dashboard';
-const VIEW_TITLE = { dashboard: '總覽', records: '記帳', bills: '繳費管理', stats: '統計報表', accounts: '帳戶' };
+const VIEW_TITLE = { dashboard: '總覽', records: '記帳', bills: '繳費管理', stats: '統計報表', billstats: '繳費統計', accounts: '帳戶' };
 
 function switchView(v) {
   currentView = v;
@@ -274,6 +280,7 @@ function render() {
   else if (currentView === 'records') renderRecords();
   else if (currentView === 'bills') renderBills();
   else if (currentView === 'stats') renderStats();
+  else if (currentView === 'billstats') renderBillStats();
   else if (currentView === 'accounts') renderAccounts();
   renderReminderBadge();
 }
@@ -306,6 +313,8 @@ function currentOccurrence(bill) {
     // 未設定週期或到期日，回傳空值
     return { dueISO: null, periodKey: null };
   }
+  // 限定發生月份：bill.months 為 1-12 陣列；不存在或空陣列代表「全年」
+  const allowed = (bill.months && bill.months.length) ? bill.months : null;
   const base = new Date(bill.dueDate + 'T00:00:00');
   const now = new Date(todayISO() + 'T00:00:00');
   let due = new Date(base);
@@ -319,6 +328,11 @@ function currentOccurrence(bill) {
       if (next > now) break;
       due = next;
     }
+  }
+  // 限定發生月份：以「目前日曆月份」是否在允許清單判斷，避免錨點月份造成的誤判
+  const curMonth = now.getMonth() + 1;
+  if (allowed && !allowed.includes(curMonth)) {
+    return { dueISO: null, periodKey: null };
   }
   const dueISO = isoLocal(due);
   const periodKey = bill.cycle === 'yearly' ? dueISO.slice(0, 4)
@@ -436,45 +450,54 @@ let billFilter = 'all';
 function renderBills() {
   const listEl = $('#billsList');
   const now = new Date(todayISO() + 'T00:00:00');
+  const cycleTxt = { monthly: '每月', quarterly: '每季', yearly: '每年' };
   let bills = DB.bills.map(b => {
     const occ = currentOccurrence(b);
-    const paid = !!(b.paid && b.paid[occ.periodKey]);
+    const active = !!(occ.dueISO); // 本月是否為該筆的發生月份
+    const paid = active && occ.periodKey ? !!(b.paid && b.paid[occ.periodKey]) : false;
     let diff = Infinity;
     if (occ.dueISO) {
       const dueD = new Date(occ.dueISO + 'T00:00:00');
       diff = Math.round((dueD - now) / 86400000);
     }
     let status = 'ok';
-    if (!paid && occ.dueISO && diff < 0) status = 'overdue';
-    else if (!paid && occ.dueISO && diff <= 7) status = 'soon';
-    return { ...b, occ, paid, diff, status };
+    if (!b.cycle || !b.dueDate) status = 'nocycle';      // 未設定週期/到期日
+    else if (!active) status = 'inactive';                // 非本月發生月份
+    else if (!paid && diff < 0) status = 'overdue';
+    else if (!paid && diff <= 7) status = 'soon';
+    return { ...b, occ, active, paid, diff, status };
   });
   if (billFilter === 'unpaid') bills = bills.filter(b => !b.paid);
   else if (billFilter === 'paid') bills = bills.filter(b => b.paid);
   bills.sort((a, b) => a.diff - b.diff);
 
-  const cycleTxt = { monthly: '每月', quarterly: '每季', yearly: '每年' };
   listEl.innerHTML = bills.length ? bills.map(b => {
     const acc = b.accountId ? DB.accounts.find(a => a.id === b.accountId) : null;
-    const cls = b.paid ? 'paid' : b.status === 'overdue' ? 'overdue' : b.status === 'soon' ? 'due-soon' : '';
-    const tag = b.paid ? '<span class="status-tag ok">已繳</span>'
-      : !b.cycle || !b.dueDate ? '<span class="status-tag ok">未設定週期</span>'
-      : b.status === 'overdue' ? `<span class="status-tag overdue">逾期 ${-b.diff} 天</span>`
-        : b.status === 'soon' ? `<span class="status-tag soon">${b.diff === 0 ? '今日到期' : b.diff + ' 天後'}</span>`
-          : '<span class="status-tag ok">未到期</span>';
+    const cls = !b.active ? 'inactive' : b.paid ? 'paid' : b.status === 'overdue' ? 'overdue' : b.status === 'soon' ? 'due-soon' : '';
+    let tag;
+    if (b.paid) tag = '<span class="status-tag ok">已繳</span>';
+    else if (b.status === 'nocycle') tag = '<span class="status-tag ok">未設定週期</span>';
+    else if (b.status === 'inactive') tag = `<span class="status-tag inactive">${monthLabels(b.months)}才繳</span>`;
+    else if (b.status === 'overdue') tag = `<span class="status-tag overdue">逾期 ${-b.diff} 天</span>`;
+    else if (b.status === 'soon') tag = `<span class="status-tag soon">${b.diff === 0 ? '今日到期' : b.diff + ' 天後'}</span>`;
+    else tag = '<span class="status-tag ok">未到期</span>';
+    const subDue = (b.active && b.occ.dueISO) ? `到期 ${b.occ.dueISO}`
+      : b.status === 'inactive' ? `${monthLabels(b.months)}繳`
+      : '未設到期日';
+    const payBtn = (b.active && b.cycle && b.dueDate)
+      ? `<button class="pay-btn ${b.paid ? 'paid' : 'unpaid'}" data-togglepay="${b.id}" data-period="${b.occ.periodKey}">${b.paid ? '↩ 取消' : '標記已繳'}</button>`
+      : `<span class="muted-pill">${b.status === 'inactive' ? '非本月' : '未設週期'}</span>`;
     return `<div class="bill-item ${cls}" data-billedit="${b.id}">
       <div class="txn-icon">${CAT_ICON[b.category] || '📄'}</div>
       <div class="bill-main">
         <div class="bill-name">${escapeHtml(b.name)}</div>
-        <div class="bill-sub">${b.cycle ? cycleTxt[b.cycle] : '未設定期'} · ${b.occ.dueISO ? `到期 ${b.occ.dueISO}` : '未設到期日'} · ${acc ? escapeHtml(acc.name) : (b.accountId ? '' : '未指定帳戶')}</div>
+        <div class="bill-sub">${b.cycle ? cycleTxt[b.cycle] : '未設定期'} · ${subDue} · ${acc ? escapeHtml(acc.name) : (b.accountId ? '' : '未指定帳戶')}</div>
         ${splitText(b) ? `<div class="bill-sub" style="color:var(--text-3);margin-top:3px">分擔：${escapeHtml(splitText(b))}</div>` : ''}
         <div style="margin-top:6px">${tag}</div>
       </div>
       <div class="bill-actions">
         <div class="bill-amt">${fmtMoney(b.amount)}</div>
-        <button class="pay-btn ${b.paid ? 'paid' : 'unpaid'}" data-togglepay="${b.id}" data-period="${b.occ.periodKey}">
-          ${b.paid ? '↩ 取消' : '標記已繳'}
-        </button>
+        ${payBtn}
       </div>
     </div>`;
   }).join('') : '<div class="empty">尚無繳費項目</div>';
@@ -482,7 +505,7 @@ function renderBills() {
 
 function togglePay(billId, periodKey, markPaid) {
   const b = DB.bills.find(x => x.id === billId);
-  if (!b) return;
+  if (!b || !periodKey) return;
   b.paid ||= {};
   if (markPaid) {
     b.paid[periodKey] = true;
@@ -544,6 +567,118 @@ function renderStats() {
       <div class="rank-bar-wrap"><div class="rank-bar" style="width:${(c.value / total * 100).toFixed(1)}%;background:${CHART_COLORS[i % CHART_COLORS.length]}"></div></div>
       <span class="rank-val">${fmtMoney(c.value)} · ${(c.value / total * 100).toFixed(0)}%</span>
     </div>`).join('') : '<div class="empty">本月無支出</div>';
+}
+
+/* =========================================================
+   繳費統計
+   ========================================================= */
+// 單筆繳費年度預估金額（尊重 cycle 與 months 限定）
+function billAnnualCost(b) {
+  if (!b.amount || !b.cycle) return 0;
+  const perYear = b.cycle === 'monthly' ? 12 : b.cycle === 'quarterly' ? 4 : 1;
+  const months = (b.months && b.months.length) ? b.months.length : 12;
+  return Math.round(b.amount * perYear * (months / 12) * 100) / 100;
+}
+
+// 指定某年某月（YYYY-MM）的預估繳費總額
+function billMonthlyProjection(ym) {
+  const [y, m] = ym.split('-').map(Number);
+  return DB.bills.reduce((s, b) => {
+    if (!b.amount || !b.cycle) return s;
+    const allowed = (b.months && b.months.length) ? b.months : null;
+    if (allowed && !allowed.includes(m)) return s;
+    const perYear = b.cycle === 'monthly' ? 12 : b.cycle === 'quarterly' ? 4 : 1;
+    return s + b.amount * perYear / 12;
+  }, 0);
+}
+
+// 本期待繳（未繳且本月 active 的項目）
+function billsCurrentPeriodUnpaid() {
+  return DB.bills.filter(b => {
+    const occ = currentOccurrence(b);
+    return occ.dueISO && !(b.paid && b.paid[occ.periodKey]);
+  });
+}
+
+// 依類別彙總年度預估
+function billCategoryAnnual() {
+  const map = {};
+  DB.bills.forEach(b => {
+    const c = b.category || '未分類';
+    map[c] = (map[c] || 0) + billAnnualCost(b);
+  });
+  return Object.entries(map).map(([name, value]) => ({ name, value: Math.round(value * 100) / 100 }))
+    .sort((a, b) => b.value - a.value);
+}
+
+// 依週期彙總年度預估
+function billCycleAnnual() {
+  const map = { monthly: 0, quarterly: 0, yearly: 0 };
+  DB.bills.forEach(b => { if (b.cycle && map[b.cycle] !== undefined) map[b.cycle] += billAnnualCost(b); });
+  const label = { monthly: '每月', quarterly: '每季', yearly: '每年' };
+  return Object.entries(map).filter(([, v]) => v > 0)
+    .map(([k, v]) => ({ name: label[k], value: Math.round(v * 100) / 100 }))
+    .sort((a, b) => b.value - a.value);
+}
+
+// 依扣款帳戶彙總年度預估
+function billAccountAnnual() {
+  const map = {};
+  DB.bills.forEach(b => { const key = b.accountId || ''; map[key] = (map[key] || 0) + billAnnualCost(b); });
+  return Object.entries(map).map(([id, value]) => {
+    let name = '未指定帳戶';
+    if (id) { const a = DB.accounts.find(x => x.id === id); name = a ? a.name : '已刪除帳戶'; }
+    return { id, name, value: Math.round(value * 100) / 100 };
+  }).sort((a, b) => b.value - a.value);
+}
+
+// 排行列表渲染（iconFn 可自訂每列 icon）
+function renderBillRank(list, elId, iconFn) {
+  const el = $(elId);
+  if (!el) return;
+  const total = list.reduce((s, c) => s + c.value, 0) || 1;
+  el.innerHTML = list.length ? list.map((c, i) => {
+    const icon = (iconFn ? (iconFn(c) || '') : (CAT_ICON[c.name] || ''));
+    const pct = (c.value / total * 100).toFixed(0);
+    return `<div class="rank-item">
+      <span class="rank-label">${icon} ${escapeHtml(c.name)}</span>
+      <div class="rank-bar-wrap"><div class="rank-bar" style="width:${pct}%;background:${CHART_COLORS[i % CHART_COLORS.length]}"></div></div>
+      <span class="rank-val">${fmtMoney(c.value)} · ${pct}%</span>
+    </div>`;
+  }).join('') : '<div class="empty">尚無繳費項目</div>';
+}
+
+function renderBillStats() {
+  const annual = DB.bills.reduce((s, b) => s + billAnnualCost(b), 0);
+  $('#billAnnual').textContent = fmtMoney(annual);
+  $('#billMonthlyAvg').textContent = '月均 ' + fmtMoney(annual / 12);
+  const due = billsCurrentPeriodUnpaid();
+  $('#billDue').textContent = fmtMoney(due.reduce((s, b) => s + (Number(b.amount) || 0), 0));
+  $('#billCount').textContent = DB.bills.length;
+
+  // 近 12 個月預估
+  const months = [];
+  const now = new Date();
+  for (let i = 11; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`); }
+  const trend = months.map(m => ({ label: m.slice(5), value: Math.round(billMonthlyProjection(m)) }));
+  drawBars($('#billTrend'), trend);
+
+  // 類別佔比（年度）
+  const cats = billCategoryAnnual();
+  drawDoughnut($('#billCatDoughnut'), cats, $('#billCatLegend'), { centerLabel: '年度', emptyText: '尚無繳費項目' });
+  // 週期分佈（年度金額）
+  const cycles = billCycleAnnual();
+  drawDoughnut($('#billCycleDoughnut'), cycles, $('#billCycleLegend'), { centerLabel: '年度', emptyText: '尚無週期設定' });
+
+  renderBillRank(cats, '#billCatRank');
+  renderBillRank(billAccountAnnual(), '#billAccRank', c => {
+    const a = c.id ? DB.accounts.find(x => x.id === c.id) : null;
+    return a && ACCOUNT_META[a.type] ? ACCOUNT_META[a.type].icon : '';
+  });
+  // 金額最高項目 Top 5（依單筆年度預估）
+  const top = DB.bills.map(b => ({ name: b.name, value: billAnnualCost(b), icon: CAT_ICON[b.category] || '' }))
+    .sort((a, b) => b.value - a.value).slice(0, 5);
+  renderBillRank(top, '#billTopList', c => c.icon);
 }
 
 /* =========================================================
@@ -653,13 +788,13 @@ function setupCanvas(canvas, cssHeight) {
   ctx.clearRect(0, 0, w, h);
   return { ctx, w, h };
 }
-function drawDoughnut(canvas, data, legendEl) {
+function drawDoughnut(canvas, data, legendEl, opts) {
   const { ctx, w, h } = setupCanvas(canvas, 220);
   const total = data.reduce((s, d) => s + d.value, 0);
   const cx = w / 2, cy = h / 2, r = Math.min(w, h) / 2 - 10, ir = r * 0.6;
   if (total === 0) {
     ctx.fillStyle = '#9ca3af'; ctx.font = '14px sans-serif'; ctx.textAlign = 'center';
-    ctx.fillText('本月尚無支出資料', cx, cy);
+    ctx.fillText((opts && opts.emptyText) || '本月尚無支出資料', cx, cy);
     if (legendEl) legendEl.innerHTML = '';
     return;
   }
@@ -680,7 +815,7 @@ function drawDoughnut(canvas, data, legendEl) {
   ctx.fill();
   ctx.fillStyle = '#111827'; ctx.textAlign = 'center';
   ctx.font = '700 18px sans-serif'; ctx.fillText(fmtMoney(total), cx, cy + 2);
-  ctx.font = '11px sans-serif'; ctx.fillStyle = '#6b7280'; ctx.fillText('總支出', cx, cy + 18);
+  ctx.font = '11px sans-serif'; ctx.fillStyle = '#6b7280'; ctx.fillText((opts && opts.centerLabel) || '總支出', cx, cy + 18);
 
   if (legendEl) {
     legendEl.innerHTML = data.map((d, i) => `<span class="legend-item"><span class="sw" style="background:${CHART_COLORS[i % CHART_COLORS.length]}"></span>${escapeHtml(d.name)} ${(d.value / total * 100).toFixed(0)}%</span>`).join('');
@@ -1647,6 +1782,17 @@ function openBillModal(id) {
   selCat.innerHTML = '<option value="">未分類</option>' + cats;
   const selAcc = $('#billAccount');
   selAcc.innerHTML = '<option value="">未指定</option>' + DB.accounts.map(a => `<option value="${a.id}">${ACCOUNT_META[a.type].icon} ${escapeHtml(a.name)}</option>`).join('');
+  // 發生月份多選（預設全年；既有資料若未設 months 也視為全年）
+  const curBill = id ? DB.bills.find(x => x.id === id) : null;
+  const mc = $('#billMonths');
+  if (mc) {
+    mc.innerHTML = Array.from({ length: 12 }, (_, i) => {
+      const m = i + 1;
+      const on = !(curBill && curBill.months && curBill.months.length) ? true : curBill.months.includes(m);
+      return `<button type="button" class="month-chip${on ? ' on' : ''}" data-month="${m}">${m}月</button>`;
+    }).join('');
+    mc.onclick = (e) => { const c = e.target.closest('.month-chip'); if (c) c.classList.toggle('on'); };
+  }
   if (id) {
     // #7 修復：find 守衛
     const b = DB.bills.find(x => x.id === id);
@@ -1680,6 +1826,10 @@ function saveBill(e) {
   if (!(amount > 0)) { $('#errBillAmount').textContent = '請輸入大於 0 的金額'; ok = false; }
   // 類別、扣款帳戶、週期、首次到期日均為選填
   if (!ok) return;
+  // 發生月份：全選或全不選都視為「全年」→ 存 null，保持資料乾淨
+  const monthEls = $$('#billMonths .month-chip.on');
+  const picked = monthEls.map(el => parseInt(el.dataset.month, 10)).sort((a, b) => a - b);
+  const monthsVal = (picked.length === 0 || picked.length === 12) ? null : picked;
   const payload = {
     name, amount: Math.round(amount * 100) / 100,
     category: $('#billCategory').value || null,
@@ -1687,6 +1837,7 @@ function saveBill(e) {
     cycle: $('#billCycle').value || null,
     dueDate: $('#billDue').value || null,
     note: $('#billNote').value.trim(),
+    months: monthsVal,
     currency: $('#billCurrency').value || DB.settings.currency || CURRENCIES[0].code,
     // 繳費恆為支出，必定支援分擔
     ...splitEditorToData(billSplit, true),
@@ -1708,22 +1859,24 @@ function saveBill(e) {
     try {
       const occ = currentOccurrence(bill);
       const wantPaid = $('#billPaidNow').checked;
-      const isPaid = !!(bill.paid && bill.paid[occ.periodKey]);
-      if (wantPaid && !isPaid) {
-        bill.paid ||= {};
-        bill.paid[occ.periodKey] = true;
-        // #4 修復：自動記帳加 paidBy
-        DB.txns.push({
-          id: uid(), type: 'expense', amount: Number(bill.amount), date: todayISO(),
-          category: bill.category, accountId: bill.accountId, note: `${bill.name}（自動記帳）`, createdAt: Date.now(),
-          _fromBill: bill.id,
-          paidBy: '',
-        });
-      } else if (!wantPaid && isPaid) {
-        // 編輯時取消勾選 → 同步撤銷當期自動記帳
-        delete bill.paid[occ.periodKey];
-        const idx = DB.txns.map(t => t._fromBill).lastIndexOf(bill.id);
-        if (idx >= 0) DB.txns.splice(idx, 1);
+      if (occ.periodKey) {
+        const isPaid = !!(bill.paid && bill.paid[occ.periodKey]);
+        if (wantPaid && !isPaid) {
+          bill.paid ||= {};
+          bill.paid[occ.periodKey] = true;
+          // #4 修復：自動記帳加 paidBy
+          DB.txns.push({
+            id: uid(), type: 'expense', amount: Number(bill.amount), date: todayISO(),
+            category: bill.category, accountId: bill.accountId, note: `${bill.name}（自動記帳）`, createdAt: Date.now(),
+            _fromBill: bill.id,
+            paidBy: '',
+          });
+        } else if (!wantPaid && isPaid) {
+          // 編輯時取消勾選 → 同步撤銷當期自動記帳
+          delete bill.paid[occ.periodKey];
+          const idx = DB.txns.map(t => t._fromBill).lastIndexOf(bill.id);
+          if (idx >= 0) DB.txns.splice(idx, 1);
+        }
       }
     } catch (e) { /* 無週期則跳過 */ }
   }

@@ -452,3 +452,38 @@ canvas { display: block; width: 100% !important; }
 /* 幣別 select 與其他表單欄位統一樣式 */
 select#txnCurrency, select#billCurrency { max-width: none; }
 
+
+/* ---------- 繳費「發生月份」多選 ---------- */
+.hint { display: block; font-size: 11px; color: var(--text-3); margin-top: 4px; line-height: 1.4; }
+.month-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.month-chip {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-2);
+  border-radius: 10px;
+  padding: 7px 0;
+  width: calc((100% - 30px) / 6);
+  min-width: 38px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .12s ease;
+}
+.month-chip:hover { border-color: var(--primary); }
+.month-chip.on {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+.bill-item.inactive { opacity: .62; }
+.status-tag.inactive { background: #e5e7eb; color: var(--text-2); }
+.muted-pill {
+  display: inline-block;
+  font-size: 11px;
+  color: var(--text-3);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 6px 10px;
+  font-weight: 600;
+}
