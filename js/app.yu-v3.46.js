@@ -110,6 +110,9 @@ const CHART_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#f59e0b', '#8b5cf6', '#0
 /* ---------- 版本資訊 ---------- */
 const APP_VERSION = 'yu-v3.46';
 const APP_BUILD_DATE = '2026-08-15';
+// 暴露給原生 APP（TWA）讀取，使頁尾版本號隨網頁自動更新
+window.APP_VERSION = APP_VERSION;
+window.APP_BUILD_DATE = APP_BUILD_DATE;
 
 /* ---------- 工具 ---------- */
 const $ = (s, r = document) => r.querySelector(s);
