@@ -108,7 +108,7 @@ const ACCOUNT_META = {
 const CHART_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#f59e0b', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#14b8a6', '#6366f1', '#a855f7', '#eab308', '#64748b'];
 
 /* ---------- 版本資訊 ---------- */
-const APP_VERSION = 'yu-v3.44';
+const APP_VERSION = 'yu-v3.45';
 const APP_BUILD_DATE = '2026-08-15';
 
 /* ---------- 工具 ---------- */
@@ -1864,13 +1864,14 @@ function openBillModal(id) {
   selCat.innerHTML = '<option value="">未分類</option>' + cats;
   const selAcc = $('#billAccount');
   selAcc.innerHTML = '<option value="">未指定</option>' + DB.accounts.map(a => `<option value="${a.id}">${ACCOUNT_META[a.type].icon} ${escapeHtml(a.name)}</option>`).join('');
-  // 發生月份多選（預設全年；既有資料若未設 months 也視為全年）
+  // 發生月份多選（新增預設不選＝全年；既有資料若未設 months 也視為全年）
   const curBill = id ? DB.bills.find(x => x.id === id) : null;
   const mc = $('#billMonths');
   if (mc) {
     mc.innerHTML = Array.from({ length: 12 }, (_, i) => {
       const m = i + 1;
-      const on = !(curBill && curBill.months && curBill.months.length) ? true : curBill.months.includes(m);
+      // 新增時預設全不選；編輯時沒設 months 視為全年
+      const on = !curBill ? false : !(curBill.months && curBill.months.length) ? true : curBill.months.includes(m);
       return `<button type="button" class="month-chip${on ? ' on' : ''}" data-month="${m}">${m}月</button>`;
     }).join('');
     mc.onclick = (e) => { const c = e.target.closest('.month-chip'); if (c) c.classList.toggle('on'); };
