@@ -31,8 +31,8 @@
 expense-tracker/
 ├── index.html        # 頁面結構（底部 tab + 彈窗表單）
 ├── css/styles.css     # 回應式樣式（手機優先，淺色主題）
-├── js/app.js          # 核心邏輯：資料層、CRUD、繳費、統計、圖表、搜尋、匯出
-├── js/cloud.js        # 雲端備份（Google Drive / Dropbox OAuth2 PKCE，無後端）
+├── js/app.yu-vX.YZ.js  # 核心邏輯：資料層、CRUD、繳費、統計、圖表、搜尋、匯出（檔名含版本號，每次發版改名）
+├── js/cloud.yu-vX.YZ.js # 雲端備份（Google Drive / Dropbox OAuth2 PKCE，無後端）
 ├── manifest.json      # PWA 安裝設定（相對路徑，相容子目錄部署）
 ├── sw.js              # Service Worker（離線快取）
 └── icons/             # PWA 圖示（192 / 512 / maskable-512）
@@ -162,9 +162,9 @@ Google Cloud Console 的重新導向 URI 跟 App 實際發出的不一致。請�
 
 ## 自訂與維護
 
-- **新增 / 修改類別**：編輯 `js/app.js` 頂部的 `EXPENSE_CATS` / `INCOME_CATS` 陣列
+- **新增 / 修改類別**：編輯 `js/app.yu-vX.YZ.js` 頂部的 `EXPENSE_CATS` / `INCOME_CATS` 陣列
 - **調整配色**：修改 `css/styles.css` 頂部的 CSS 變數（`--primary`、`--bg` 等）
-- **改預設貨幣符號**：搜尋 `js/app.js` 中的 `¥` 字樣替換
+- **改預設貨幣符號**：搜尋 `js/app.yu-vX.YZ.js` 中的 `¥` 字樣替換
 - **類別圖示**：`CAT_ICON` 對照表（類別名稱 → emoji）
 
 ---
