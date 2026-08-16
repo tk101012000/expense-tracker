@@ -163,3 +163,31 @@ if(d)d.textContent=('更新於 '+(window.APP_BUILD_DATE||'YYYY-MM-DD'));
 - **勿對此 repo 做互動式 rebase（`git rebase -i`）**：曾把本地物件庫弄壞（missing blobs），需整個換掉 `.git` 才能救回。需要重排 commit 時改用 `git commit --amend` 或新開分支處理。
 - **勿把 keystore 密碼寫進倉庫 / 腳本**。
 - **勿刪除 `.nojekyll`**（會讓 `.well-known` 無法部署）。
+
+---
+
+## 7. 電腦 / 瀏覽器如何開啟（終端使用者）
+
+這是一個網頁（PWA），電腦用瀏覽器開就能用，**不用安裝任何東西**。
+
+### 7.1 直接用瀏覽器開
+
+1. 打開 **Chrome** 或 **Edge**
+2. 網址列貼上並 Enter：
+   ```
+   https://tk101012000.github.io/expense-tracker/
+   ```
+3. 即可使用。資料存在該瀏覽器的本機儲存（localStorage），與手機 APP 是**同一套網頁**。
+
+### 7.2 安裝成電腦版 APP（可離線、像原生程式）
+
+- **Chrome**：地址列左邊的安裝圖示 📥，或右上角 `⋯` →「安裝 繳費記帳…」
+- **Edge**：右上角 `⋯` →「應用程式」→「將此網站安裝為應用程式」
+- 安裝後會出現在桌面 / 開始選單，像一般程式一樣開啟，且可離線使用。
+
+### 7.3 跨裝置同步
+
+- 電腦版與手機版預設**各自獨立存**（localStorage 不跨裝置）。
+- 要同步：在任一端用 APP 內的「雲端備份」上傳（Google Drive / Dropbox），另一端再「還原」即可。
+
+> 想換桌面上的 APP 圖示 / 加到主畫面的捷徑圖示：見倉庫 `icons/` 目錄與「APP 圖標自訂」說明（改 `icons/` 後 push 即生效，免重裝）。
