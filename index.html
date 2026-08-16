@@ -14,7 +14,7 @@
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="css/styles.css?v=yu-v3.53" />
+  <link rel="stylesheet" href="css/styles.css?v=yu-v3.54" />
   <!-- OAuth 回傳橋接：本頁若在「系統瀏覽器 / Chrome Custom Tabs」（非 App 內 WebView）載入，
        且網址帶 ?code=（Google 授權回傳），則改以自訂 scheme 把 code/state 回傳給 Android App，
        避開嵌入 WebView 的 disallowed_useragent。桌面瀏覽器（非 Android）不攔截，照常走 handleRedirect。 -->
@@ -71,6 +71,7 @@
       <button class="icon-btn" id="reminderBtn" title="提醒">
         🔔<span class="badge" id="reminderBadge" hidden>0</span>
       </button>
+      <button class="icon-btn" id="themeToggle" title="切換深色模式" aria-label="切換深色模式">🌙</button>
     </header>
 
     <!-- 主內容 -->
@@ -425,6 +426,24 @@
       <button class="sel-all" id="selAll">全選</button>
       <button class="sel-delete" id="selDelete" disabled>刪除 (0)</button>
     </div>
+
+    <!-- 情境化刪除確認（Tier 3D） -->
+    <div class="modal" id="confirmModal" hidden>
+      <div class="modal-card">
+        <div class="modal-head">
+          <h3 id="confirmTitle">確認</h3>
+          <button class="icon-btn" type="button" data-close>✕</button>
+        </div>
+        <div class="modal-body">
+          <p class="confirm-msg" id="confirmMsg"></p>
+          <div class="confirm-ctx" id="confirmCtx"></div>
+          <div class="modal-actions">
+            <button type="button" class="ghost-btn" id="confirmCancel">取消</button>
+            <button type="button" class="primary-btn danger" id="confirmOk">刪除</button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- ============ 交易編輯彈窗 ============ -->
@@ -434,32 +453,36 @@
         <h3 id="txnModalTitle">新增交易</h3>
         <button class="icon-btn" type="button" data-close>✕</button>
       </div>
-      <form id="txnForm" class="modal-body">
-        <div class="type-toggle">
-          <button type="button" class="tt-btn active" data-ttype="expense">支出</button>
-          <button type="button" class="tt-btn" data-ttype="income">收入</button>
+      <form id="txnForm" class="modal-body groups">
+        <div class="form-section">
+          <div class="form-section-title">基本資料</div>
+          <div class="type-toggle">
+            <button type="button" class="tt-btn active" data-ttype="expense">支出</button>
+            <button type="button" class="tt-btn" data-ttype="income">收入</button>
+          </div>
+          <label class="field">金額 <span class="req">*</span>
+            <input type="number" id="txnAmount" step="0.01" min="0" inputmode="decimal" placeholder="0.00" />
+            <small class="err" id="errAmount"></small>
+          </label>
+          <label class="field">日期 <span class="req">*</span>
+            <input type="date" id="txnDate" />
+            <small class="err" id="errDate"></small>
+          </label>
+          <label class="field">類別 <span class="req">*</span>
+            <select id="txnCategory"></select>
+          </label>
+          <label class="field">帳戶 <span class="req">*</span>
+            <select id="txnAccount"></select>
+          </label>
+          <label class="field">幣別
+            <select id="txnCurrency"></select>
+          </label>
+          <label class="field">付款人（誰付錢）
+            <select id="txnPaidBy"><option value="">未指定</option></select>
+          </label>
         </div>
-        <label class="field">金額 <span class="req">*</span>
-          <input type="number" id="txnAmount" step="0.01" min="0" inputmode="decimal" placeholder="0.00" />
-          <small class="err" id="errAmount"></small>
-        </label>
-        <label class="field">日期 <span class="req">*</span>
-          <input type="date" id="txnDate" />
-          <small class="err" id="errDate"></small>
-        </label>
-        <label class="field">類別 <span class="req">*</span>
-          <select id="txnCategory"></select>
-        </label>
-        <label class="field">帳戶 <span class="req">*</span>
-          <select id="txnAccount"></select>
-        </label>
-        <label class="field">幣別
-          <select id="txnCurrency"></select>
-        </label>
-        <label class="field">付款人（誰付錢）
-          <select id="txnPaidBy"><option value="">未指定</option></select>
-        </label>
-        <div id="txnSplitWrap">
+        <div class="form-section" id="txnSplitWrap">
+          <div class="form-section-title">多人分擔</div>
           <label class="field field-toggle">
             <span>多人分擔（此筆由多人分攤）</span>
             <input type="checkbox" id="txnSplitOn" />
@@ -477,9 +500,12 @@
             <div class="pill" id="txnSplitValidation"></div>
           </div>
         </div>
-        <label class="field">備註
-          <input type="text" id="txnNote" maxlength="60" placeholder="選填，最多 60 字" />
-        </label>
+        <div class="form-section">
+          <div class="form-section-title">備註</div>
+          <label class="field">備註
+            <input type="text" id="txnNote" maxlength="60" placeholder="選填，最多 60 字" />
+          </label>
+        </div>
         <div class="modal-actions">
           <button type="button" class="ghost-btn" id="deleteTxnBtn" hidden>刪除</button>
           <button type="submit" class="primary-btn">儲存</button>
@@ -495,24 +521,27 @@
         <h3 id="accountModalTitle">新增帳戶</h3>
         <button class="icon-btn" type="button" data-close>✕</button>
       </div>
-      <form id="accountForm" class="modal-body">
-        <label class="field">帳戶名稱 <span class="req">*</span>
-          <input type="text" id="accName" maxlength="20" placeholder="例：中國信託" />
-          <small class="err" id="errAccName"></small>
-        </label>
-        <label class="field">類型 <span class="req">*</span>
-          <select id="accType">
-            <option value="cash">現金</option>
-            <option value="bank">銀行</option>
-            <option value="credit">信用卡</option>
-          </select>
-        </label>
-        <label class="field">初始餘額
-          <input type="number" id="accBalance" step="0.01" placeholder="0.00" />
-        </label>
-        <label class="field">備註
-          <input type="text" id="accNote" maxlength="40" placeholder="選填" />
-        </label>
+      <form id="accountForm" class="modal-body groups">
+        <div class="form-section">
+          <div class="form-section-title">帳戶資料</div>
+          <label class="field">帳戶名稱 <span class="req">*</span>
+            <input type="text" id="accName" maxlength="20" placeholder="例：中國信託" />
+            <small class="err" id="errAccName"></small>
+          </label>
+          <label class="field">類型 <span class="req">*</span>
+            <select id="accType">
+              <option value="cash">現金</option>
+              <option value="bank">銀行</option>
+              <option value="credit">信用卡</option>
+            </select>
+          </label>
+          <label class="field">初始餘額
+            <input type="number" id="accBalance" step="0.01" placeholder="0.00" />
+          </label>
+          <label class="field">備註
+            <input type="text" id="accNote" maxlength="40" placeholder="選填" />
+          </label>
+        </div>
         <div class="modal-actions">
           <button type="button" class="ghost-btn" id="deleteAccBtn" hidden>刪除</button>
           <button type="submit" class="primary-btn">儲存</button>
@@ -528,46 +557,54 @@
         <h3 id="billModalTitle">新增繳費項目</h3>
         <button class="icon-btn" type="button" data-close>✕</button>
       </div>
-      <form id="billForm" class="modal-body">
-        <label class="field">項目名稱 <span class="req">*</span>
-          <input type="text" id="billName" maxlength="20" placeholder="例：台電電費" />
-          <small class="err" id="errBillName"></small>
-        </label>
-        <label class="field">金額 <span class="req">*</span>
-          <input type="number" id="billAmount" step="0.01" min="0" inputmode="decimal" placeholder="0.00" />
-          <small class="err" id="errBillAmount"></small>
-        </label>
-        <label class="field">幣別
-          <select id="billCurrency"></select>
-        </label>
-        <label class="field">類別
-          <select id="billCategory"><option value="">未分類</option></select>
-        </label>
-        <label class="field">扣款帳戶
-          <select id="billAccount"><option value="">未指定</option></select>
-        </label>
-        <div class="field-row">
-          <label class="field">週期
-            <select id="billCycle">
-              <option value="">未設定</option>
-              <option value="monthly">每月</option>
-              <option value="quarterly">每季</option>
-              <option value="yearly">每年</option>
-            </select>
+      <form id="billForm" class="modal-body groups">
+        <div class="form-section">
+          <div class="form-section-title">基本資料</div>
+          <label class="field">項目名稱 <span class="req">*</span>
+            <input type="text" id="billName" maxlength="20" placeholder="例：台電電費" />
+            <small class="err" id="errBillName"></small>
           </label>
-          <label class="field">首次到期日
-            <input type="date" id="billDue" placeholder="選填" />
+          <label class="field">金額 <span class="req">*</span>
+            <input type="number" id="billAmount" step="0.01" min="0" inputmode="decimal" placeholder="0.00" />
+            <small class="err" id="errBillAmount"></small>
+          </label>
+          <label class="field">幣別
+            <select id="billCurrency"></select>
+          </label>
+          <label class="field">類別
+            <select id="billCategory"><option value="">未分類</option></select>
+          </label>
+          <label class="field">扣款帳戶
+            <select id="billAccount"><option value="">未指定</option></select>
           </label>
         </div>
-        <small class="err" id="errBillDue"></small>
-        <label class="field">發生月份（可多選，不選則視為全年）
-          <div class="month-chips" id="billMonths"></div>
-          <small class="hint">留空＝每月都發生；勾選後只會在選取的月份列為「待繳」並提醒。</small>
-        </label>
-        <label class="field">備註
-          <input type="text" id="billNote" maxlength="40" placeholder="選填" />
-        </label>
-        <div id="billSplitWrap">
+        <div class="form-section">
+          <div class="form-section-title">繳費與提醒</div>
+          <div class="field-row">
+            <label class="field">週期
+              <select id="billCycle">
+                <option value="">未設定</option>
+                <option value="monthly">每月</option>
+                <option value="quarterly">每季</option>
+                <option value="yearly">每年</option>
+              </select>
+            </label>
+            <label class="field">首次到期日
+              <input type="date" id="billDue" placeholder="選填" />
+            </label>
+          </div>
+          <small class="err" id="errBillDue"></small>
+          <label class="field">發生月份（可多選，不選則視為全年）
+            <div class="month-chips" id="billMonths"></div>
+            <small class="hint">留空＝每月都發生；勾選後只會在選取的月份列為「待繳」並提醒。</small>
+          </label>
+          <label class="field field-toggle">
+            <span>標記為已繳</span>
+            <input type="checkbox" id="billPaidNow" />
+          </label>
+        </div>
+        <div class="form-section" id="billSplitWrap">
+          <div class="form-section-title">多人分擔</div>
           <label class="field field-toggle">
             <span>多人分擔（此筆由多人分攤）</span>
             <input type="checkbox" id="billSplitOn" />
@@ -585,10 +622,12 @@
             <div class="pill" id="billSplitValidation"></div>
           </div>
         </div>
-        <label class="field field-toggle">
-          <span>標記為已繳</span>
-          <input type="checkbox" id="billPaidNow" />
-        </label>
+        <div class="form-section">
+          <div class="form-section-title">備註</div>
+          <label class="field">備註
+            <input type="text" id="billNote" maxlength="40" placeholder="選填" />
+          </label>
+        </div>
         <div class="modal-actions">
           <button type="button" class="ghost-btn" id="deleteBillBtn" hidden>刪除</button>
           <button type="submit" class="primary-btn">儲存</button>
@@ -667,7 +706,7 @@
   <!-- Toast -->
   <div id="toast" class="toast" hidden></div>
 
-  <script src="js/cloud.yu-v3.53.js?v=yu-v3.53"></script>
-  <script src="js/app.yu-v3.53.js?v=yu-v3.53"></script>
+  <script src="js/cloud.yu-v3.54.js?v=yu-v3.54"></script>
+  <script src="js/app.yu-v3.54.js?v=yu-v3.54"></script>
 </body>
 </html>

@@ -106,9 +106,11 @@ const ACCOUNT_META = {
 };
 
 const CHART_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#f59e0b', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#14b8a6', '#6366f1', '#a855f7', '#eab308', '#64748b'];
+// 讀取 CSS 自訂變數（暗色模式時圖表文字/軸線隨主題變色）
+function cssVar(name, fallback) { const v = getComputedStyle(document.body).getPropertyValue(name); return v ? v.trim() : (fallback || ''); }
 
 /* ---------- 版本資訊 ---------- */
-const APP_VERSION = 'yu-v3.53';
+const APP_VERSION = 'yu-v3.54';
 const APP_BUILD_DATE = '2026-08-16';
 // 暴露給原生 APP（TWA）讀取，使頁尾版本號隨網頁自動更新
 window.APP_VERSION = APP_VERSION;
@@ -273,7 +275,13 @@ function switchView(v) {
   $$('.tab[data-view]').forEach(t => t.classList.toggle('active', t.dataset.view === v));
   $('#viewTitle').textContent = VIEW_TITLE[v] || '';
   $('#viewSub').style.display = v === 'dashboard' ? '' : 'none';
-  render();
+  if (v === 'records' || v === 'bills' || v === 'accounts') {
+    // Tier 3C：切到清單型頁面先顯示骨架，再於下一幀填入真實資料
+    showSkeleton(v);
+    setTimeout(() => { if (currentView === v) render(); }, 180);
+  } else {
+    render();
+  }
   document.getElementById('main').scrollTo(0, 0);
   window.scrollTo(0, 0);
 }
@@ -582,15 +590,27 @@ function selectAllToggle() {
 function deleteSelected() {
   if (selSet.size === 0) return;
   const n = selSet.size;
-  if (!confirm(`確定刪除選取的 ${n} 筆？此動作無法復原。`)) return;
+  let preview;
   if (selType === 'txn') {
-    DB.txns = DB.txns.filter(t => !selSet.has(t.id));
+    const items = DB.txns.filter(t => selSet.has(t.id)).slice(0, 3).map(t => `${escapeHtml(t.category || '交易')} ${fmtMoney(t.amount)}`);
+    preview = confirmRows([['選取', `${n} 筆`], ['預覽', items.join('、') || '—']]);
   } else {
-    DB.bills = DB.bills.filter(b => !selSet.has(b.id));
+    const items = DB.bills.filter(b => selSet.has(b.id)).slice(0, 3).map(b => escapeHtml(b.name));
+    preview = confirmRows([['選取', `${n} 筆`], ['預覽', items.join('、') || '—']]);
   }
-  if (!save()) return;
-  toast(`已刪除 ${n} 筆`);
-  exitSelMode();
+  showConfirm({
+    title: '批次刪除',
+    message: `確定要刪除選取的 ${n} 筆嗎？此動作無法復原。`,
+    danger: true, confirmText: `刪除 ${n} 筆`,
+    context: preview,
+    onConfirm: () => {
+      if (selType === 'txn') DB.txns = DB.txns.filter(t => !selSet.has(t.id));
+      else DB.bills = DB.bills.filter(b => !selSet.has(b.id));
+      if (!save()) return;
+      toast(`已刪除 ${n} 筆`);
+      exitSelMode();
+    }
+  });
 }
 
 function togglePay(billId, periodKey, markPaid) {
@@ -998,7 +1018,7 @@ function drawDoughnut(canvas, data, legendEl, opts) {
   const total = data.reduce((s, d) => s + d.value, 0);
   const cx = w / 2, cy = h / 2, r = Math.min(w, h) / 2 - 10, ir = r * 0.6;
   if (total === 0) {
-    ctx.fillStyle = '#9ca3af'; ctx.font = '14px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillStyle = cssVar('--text-3', '#9ca3af'); ctx.font = '14px sans-serif'; ctx.textAlign = 'center';
     ctx.fillText((opts && opts.emptyText) || '本月尚無支出資料', cx, cy);
     if (legendEl) legendEl.innerHTML = '';
     return;
@@ -1018,9 +1038,9 @@ function drawDoughnut(canvas, data, legendEl, opts) {
   ctx.beginPath(); ctx.arc(cx, cy, ir, 0, Math.PI * 2);
   ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--surface') || '#fff';
   ctx.fill();
-  ctx.fillStyle = '#111827'; ctx.textAlign = 'center';
+  ctx.fillStyle = cssVar('--text', '#111827'); ctx.textAlign = 'center';
   ctx.font = '700 18px sans-serif'; ctx.fillText(fmtMoney(total), cx, cy + 2);
-  ctx.font = '11px sans-serif'; ctx.fillStyle = '#6b7280'; ctx.fillText((opts && opts.centerLabel) || '總支出', cx, cy + 18);
+  ctx.font = '11px sans-serif'; ctx.fillStyle = cssVar('--text-3', '#6b7280'); ctx.fillText((opts && opts.centerLabel) || '總支出', cx, cy + 18);
 
   if (legendEl) {
     legendEl.innerHTML = data.map((d, i) => `<span class="legend-item"><span class="sw" style="background:${CHART_COLORS[i % CHART_COLORS.length]}"></span>${escapeHtml(d.name)} ${(d.value / total * 100).toFixed(0)}%</span>`).join('');
@@ -1032,14 +1052,14 @@ function drawBars(canvas, data) {
   const cw = w - pad.l - pad.r, ch = h - pad.t - pad.b;
   const max = Math.max(...data.map(d => d.value), 1);
   // 軸線
-  ctx.strokeStyle = '#e5e7eb'; ctx.lineWidth = 1;
+  ctx.strokeStyle = cssVar('--border', '#e5e7eb'); ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(pad.l, pad.t); ctx.lineTo(pad.l, pad.t + ch); ctx.lineTo(pad.l + cw, pad.t + ch); ctx.stroke();
   // 水平刻度
-  ctx.fillStyle = '#9ca3af'; ctx.font = '10px sans-serif'; ctx.textAlign = 'right';
+  ctx.fillStyle = cssVar('--text-3', '#9ca3af'); ctx.font = '10px sans-serif'; ctx.textAlign = 'right';
   for (let i = 0; i <= 3; i++) {
     const v = max / 3 * i; const y = pad.t + ch - (v / max) * ch;
     ctx.fillText(Math.round(v).toLocaleString(), pad.l - 6, y + 3);
-    if (i > 0) { ctx.strokeStyle = '#f3f4f6'; ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(pad.l + cw, y); ctx.stroke(); }
+    if (i > 0) { ctx.strokeStyle = cssVar('--border', '#f3f4f6'); ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(pad.l + cw, y); ctx.stroke(); }
   }
   const bw = cw / data.length * 0.55;
   data.forEach((d, i) => {
@@ -1058,7 +1078,7 @@ function drawBars(canvas, data) {
     ctx.arcTo(rx, y, rx + rr, y, rr); ctx.lineTo(rx + bw - rr, y);
     ctx.arcTo(rx + bw, y, rx + bw, y + rr, rr); ctx.lineTo(rx + bw, y + bh);
     ctx.closePath(); ctx.fill();
-    ctx.fillStyle = '#6b7280'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillStyle = cssVar('--text-3', '#6b7280'); ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
     ctx.fillText(d.label, x, pad.t + ch + 16);
   });
 }
@@ -1313,10 +1333,18 @@ function saveTxn(e) {
 }
 function deleteTxn() {
   if (!editTxnId) return;
-  if (!confirm('確定刪除這筆交易？')) return;
-  DB.txns = DB.txns.filter(t => t.id !== editTxnId);
-  if (!save()) return;  // #8 修復
-  $('#txnModal').hidden = true; toast('已刪除'); render();
+  const t = DB.txns.find(x => x.id === editTxnId);
+  showConfirm({
+    title: '刪除交易',
+    message: '確定要刪除這筆交易嗎？此動作無法復原。',
+    danger: true, confirmText: '刪除',
+    context: t ? confirmRows([['金額', fmtMoney(t.amount), true], ['類別', t.category || '—'], ['日期', t.date || '—']]) : '',
+    onConfirm: () => {
+      DB.txns = DB.txns.filter(x => x.id !== editTxnId);
+      if (!save()) return;  // #8 修復
+      $('#txnModal').hidden = true; toast('已刪除'); render();
+    }
+  });
 }
 
 /* =========================================================
@@ -1360,12 +1388,20 @@ function saveAccount(e) {
 }
 function deleteAccount() {
   if (!editAccId) return;
+  const a = DB.accounts.find(x => x.id === editAccId);
   const has = DB.txns.some(t => t.accountId === editAccId) || DB.bills.some(b => b.accountId === editAccId);
   if (has) { toast('此帳戶仍有交易或帳單，無法刪除'); return; }
-  if (!confirm('確定刪除此帳戶？')) return;
-  DB.accounts = DB.accounts.filter(a => a.id !== editAccId);
-  if (!save()) return;  // #8 修復
-  $('#accountModal').hidden = true; toast('已刪除帳戶'); render();
+  showConfirm({
+    title: '刪除帳戶',
+    message: '確定要刪除這個帳戶嗎？此動作無法復原。',
+    danger: true, confirmText: '刪除',
+    context: a ? confirmRows([['帳戶', a.name], ['類型', (ACCOUNT_META[a.type] && ACCOUNT_META[a.type].label) || a.type]]) : '',
+    onConfirm: () => {
+      DB.accounts = DB.accounts.filter(x => x.id !== editAccId);
+      if (!save()) return;  // #8 修復
+      $('#accountModal').hidden = true; toast('已刪除帳戶'); render();
+    }
+  });
 }
 
 /* =========================================================
@@ -1419,17 +1455,25 @@ function saveMember(e) {
 function deleteMember() {
   if (!editMemberId) return;
   const used = DB.txns.some(t => t.paidBy === editMemberId);
-  if (used && !confirm('此成員已有交易紀錄，刪除後相關交易將變為「未指定付款人」，確定刪除？')) return;
-  if (!used && !confirm('確定刪除此成員？')) return;
-  DB.members = DB.members.filter(m => m.id !== editMemberId);
-  DB.txns.forEach(t => { if (t.paidBy === editMemberId) t.paidBy = ''; });
-  if (!save()) return;  // #8 修復
-  $('#memberModal').hidden = true;
-  const txnModal = document.getElementById('txnModal');
-  const txnSel = $('#txnPaidBy');
-  if (txnSel && txnModal && !txnModal.hidden) fillMemberSelect(txnSel, '', false);
-  fillMemberSelect($('#filterPaidBy'), $('#filterPaidBy').value, true);
-  render();
+  const m = DB.members.find(x => x.id === editMemberId);
+  const doDelete = () => {
+    DB.members = DB.members.filter(x => x.id !== editMemberId);
+    DB.txns.forEach(t => { if (t.paidBy === editMemberId) t.paidBy = ''; });
+    if (!save()) return;  // #8 修復
+    $('#memberModal').hidden = true;
+    const txnModal = document.getElementById('txnModal');
+    const txnSel = $('#txnPaidBy');
+    if (txnSel && txnModal && !txnModal.hidden) fillMemberSelect(txnSel, '', false);
+    fillMemberSelect($('#filterPaidBy'), $('#filterPaidBy').value, true);
+    render();
+  };
+  showConfirm({
+    title: '刪除成員',
+    message: used ? '此成員已有交易紀錄，刪除後相關交易將變為「未指定付款人」。' : '確定要刪除這個成員嗎？',
+    danger: true, confirmText: '刪除',
+    context: m ? confirmRows([['成員', m.name], ['影響', used ? '相關交易改為未指定' : '無交易紀錄']]) : '',
+    onConfirm: doDelete
+  });
 }
 function renderMembers() {
   const el = $('#memberList');
@@ -2096,10 +2140,18 @@ function saveBill(e) {
 }
 function deleteBill() {
   if (!editBillId) return;
-  if (!confirm('確定刪除此繳費項目？（已產生的記帳不會刪除）')) return;
-  DB.bills = DB.bills.filter(b => b.id !== editBillId);
-  if (!save()) return;  // #8 修復
-  $('#billModal').hidden = true; toast('已刪除'); render();
+  const b = DB.bills.find(x => x.id === editBillId);
+  showConfirm({
+    title: '刪除繳費項目',
+    message: '確定要刪除這個繳費項目嗎？已產生的記帳不會刪除。',
+    danger: true, confirmText: '刪除',
+    context: b ? confirmRows([['項目', b.name], ['金額', fmtMoney(b.amount), true], ['類別', b.category || '—']]) : '',
+    onConfirm: () => {
+      DB.bills = DB.bills.filter(x => x.id !== editBillId);
+      if (!save()) return;  // #8 修復
+      $('#billModal').hidden = true; toast('已刪除'); render();
+    }
+  });
 }
 
 /* =========================================================
@@ -2485,7 +2537,64 @@ function scheduleAutoBackup() {
   window.addEventListener('focus', checkAutoBackup);
 }
 
+/* =========================================================
+   Tier 3 — 主題切換 / 骨架載入 / 情境化確認
+   ========================================================= */
+function getStoredTheme() {
+  const s = localStorage.getItem('theme');
+  if (s === 'dark' || s === 'light') return s;
+  return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+}
+function applyTheme(theme) {
+  if (theme === 'dark') {
+    document.body.setAttribute('data-theme', 'dark');
+    const t = $('#themeToggle'); if (t) t.textContent = '☀️';
+  } else {
+    document.body.removeAttribute('data-theme');
+    const t = $('#themeToggle'); if (t) t.textContent = '🌙';
+  }
+  const mc = document.querySelector('meta[name="theme-color"]');
+  if (mc) mc.content = theme === 'dark' ? '#0b1120' : '#2563eb';
+}
+
+/* ---------- 列表骨架（Tier 3C） ---------- */
+function skeletonRow() {
+  return `<div class="sk-row">
+    <div class="skeleton sk-ic"></div>
+    <div class="sk-line"><span class="skeleton sk-w1"></span><span class="skeleton sk-w2"></span></div>
+    <div class="skeleton sk-amt"></div>
+  </div>`;
+}
+function showSkeleton(view) {
+  let el, count;
+  if (view === 'records') { el = $('#recordsList'); count = 5; }
+  else if (view === 'bills') { el = $('#billsList'); count = 5; }
+  else { el = $('#accountsList'); count = 4; }
+  if (!el) return;
+  el.innerHTML = Array.from({ length: count }, skeletonRow).join('');
+}
+
+/* ---------- 情境化刪除確認（Tier 3D） ---------- */
+function confirmRows(rows) {
+  return rows.map(([label, val, amt]) =>
+    `<div class="confirm-row"><span>${escapeHtml(label)}</span><b class="${amt ? 'amt' : ''}">${escapeHtml(String(val))}</b></div>`
+  ).join('');
+}
+function showConfirm(opts) {
+  $('#confirmTitle').textContent = opts.title || '確認';
+  $('#confirmMsg').textContent = opts.message || '';
+  $('#confirmCtx').innerHTML = opts.context || '';
+  const ok = $('#confirmOk');
+  ok.textContent = opts.confirmText || '確定';
+  ok.classList.toggle('danger', !!opts.danger);
+  $('#confirmModal').hidden = false;
+  const close = () => { $('#confirmModal').hidden = true; ok.onclick = null; $('#confirmCancel').onclick = null; };
+  $('#confirmCancel').onclick = close;
+  ok.onclick = () => { close(); if (opts.onConfirm) opts.onConfirm(); };
+}
+
 function init() {
+  applyTheme(getStoredTheme());   // Tier 3A：套用主題（初次依系統偏好）
   load();
   fillFilterCategory();
   fillAccountSelect($('#filterAccount'), '', true);
@@ -2522,6 +2631,12 @@ function init() {
   // 頁尾版本號
   if ($('#appVersion')) $('#appVersion').textContent = APP_VERSION;
   if ($('#appBuildDate')) $('#appBuildDate').textContent = '更新於 ' + APP_BUILD_DATE;
+  // Tier 3A：主題切換鈕
+  const tt = $('#themeToggle');
+  if (tt) tt.addEventListener('click', () => {
+    const next = document.body.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    applyTheme(next); localStorage.setItem('theme', next);
+  });
 }
 document.addEventListener('DOMContentLoaded', init);
 

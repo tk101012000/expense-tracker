@@ -15,6 +15,7 @@
   --expense: #ef4444;
   --income: #16a34a;
   --warn: #f59e0b;
+  --danger: #dc2626;
   /* 層次陰影系統 */
   --shadow-xs: 0 1px 2px rgba(15,23,42,.04);
   --shadow: 0 1px 3px rgba(15,23,42,.06), 0 1px 2px rgba(15,23,42,.04);
@@ -755,3 +756,98 @@ select#txnCurrency, select#billCurrency { max-width: none; }
   margin-bottom: 8px;
   opacity: .5;
 }
+
+/* ================================================================
+   Tier 3A — 暗色模式
+   ================================================================ */
+body[data-theme="dark"] {
+  --bg: #0b1120;
+  --surface: #111827;
+  --surface-2: #1e293b;
+  --border: #283449;
+  --text: #e2e8f0;
+  --text-2: #cbd5e1;
+  --text-3: #94a3b8;
+  --primary: #3b82f6;
+  --primary-dark: #2563eb;
+  --primary-soft: rgba(59, 130, 246, .16);
+  --expense: #f87171;
+  --income: #4ade80;
+  --warn: #fbbf24;
+  --danger: #ef4444;
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, .35);
+  --shadow: 0 1px 3px rgba(0, 0, 0, .45), 0 1px 2px rgba(0, 0, 0, .35);
+  --shadow-md: 0 4px 14px rgba(0, 0, 0, .55);
+  --shadow-lg: 0 14px 30px rgba(0, 0, 0, .65), 0 4px 10px rgba(0, 0, 0, .5);
+}
+/* 元件層級：輸入框在暗色下與彈窗底色拉出層次 */
+body[data-theme="dark"] .field input,
+body[data-theme="dark"] .field select,
+body[data-theme="dark"] .field textarea,
+body[data-theme="dark"] .filter-bar input[type=search],
+body[data-theme="dark"] .cur-trigger,
+body[data-theme="dark"] .cur-search { background: var(--surface-2); }
+/* 語義小標籤：改用半透明底，避免亮色塊刺眼 */
+body[data-theme="dark"] .status-tag.ok { background: rgba(74, 222, 128, .16); color: var(--income); }
+body[data-theme="dark"] .status-tag.overdue { background: rgba(248, 113, 113, .16); color: var(--expense); }
+body[data-theme="dark"] .status-tag.soon { background: rgba(251, 191, 36, .16); color: var(--warn); }
+body[data-theme="dark"] .status-tag.inactive { background: rgba(148, 163, 184, .16); color: var(--text-2); }
+body[data-theme="dark"] .pill.ok { background: rgba(74, 222, 128, .16); color: var(--income); }
+body[data-theme="dark"] .pill.warn { background: rgba(251, 191, 36, .16); color: var(--warn); }
+body[data-theme="dark"] .muted-pill { background: var(--surface-2); }
+/* Toast 在暗色下改用抬升的深色，避免與背景融為一體 */
+body[data-theme="dark"] .toast { background: #1f2937; border: 1px solid var(--border); }
+/* 頂部列圖示按鈕在暗色下略降透明度背景 */
+body[data-theme="dark"] .topbar .icon-btn { background: rgba(255, 255, 255, .12); }
+/* 圖表分隔線在暗色下用 border 色 */
+body[data-theme="dark"] canvas { filter: saturate(1.05); }
+
+/* ================================================================
+   Tier 3B — 表單彈窗分組
+   ================================================================ */
+.modal-body.groups { gap: 0; }
+.form-section { padding: 16px 0; display: flex; flex-direction: column; gap: 14px; }
+.form-section:first-child { padding-top: 0; }
+.form-section:last-of-type { padding-bottom: 0; }
+.form-section + .form-section { border-top: 1px solid var(--border); }
+.form-section-title {
+  font-size: 12px; font-weight: 700; color: var(--text-3);
+  letter-spacing: .4px; display: flex; align-items: center; gap: 6px;
+}
+.form-section-title::before {
+  content: ''; width: 3px; height: 13px; border-radius: 2px;
+  background: var(--primary); display: inline-block;
+}
+
+/* ================================================================
+   Tier 3C — 列表骨架載入
+   ================================================================ */
+.skeleton { position: relative; overflow: hidden; background: var(--surface-2); border-radius: 10px; }
+.skeleton::after {
+  content: ''; position: absolute; inset: 0; transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .5), transparent);
+  animation: shimmer 1.15s infinite;
+}
+body[data-theme="dark"] .skeleton::after { background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .07), transparent); }
+@keyframes shimmer { 100% { transform: translateX(100%); } }
+.sk-row { display: flex; align-items: center; gap: 12px; padding: 10px 8px; }
+.sk-ic { width: 42px; height: 42px; border-radius: 12px; flex: none; }
+.sk-line { flex: 1; display: flex; flex-direction: column; gap: 7px; }
+.sk-line > span { height: 11px; border-radius: 6px; }
+.sk-w1 { width: 55%; } .sk-w2 { width: 35%; }
+.sk-amt { width: 58px; height: 16px; border-radius: 8px; flex: none; }
+
+/* ================================================================
+   Tier 3D — 情境化刪除確認
+   ================================================================ */
+#confirmModal { align-items: center; }
+#confirmModal .modal-card { max-width: 380px; border-radius: 20px; }
+.confirm-msg { font-size: 14px; color: var(--text-2); line-height: 1.55; }
+.confirm-ctx { margin-top: 12px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+.confirm-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 12px; font-size: 13px; }
+.confirm-row + .confirm-row { border-top: 1px dashed var(--border); }
+.confirm-row span { color: var(--text-3); }
+.confirm-row b { color: var(--text); font-weight: 700; }
+.confirm-row b.amt { color: var(--expense); }
+.primary-btn.danger { background: var(--danger); }
+.primary-btn.danger:active { filter: brightness(.92); }
