@@ -14,7 +14,7 @@
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="css/styles.css?v=yu-v3.50" />
+  <link rel="stylesheet" href="css/styles.css?v=yu-v3.51" />
   <!-- OAuth 回傳橋接：本頁若在「系統瀏覽器 / Chrome Custom Tabs」（非 App 內 WebView）載入，
        且網址帶 ?code=（Google 授權回傳），則改以自訂 scheme 把 code/state 回傳給 Android App，
        避開嵌入 WebView 的 disallowed_useragent。桌面瀏覽器（非 Android）不攔截，照常走 handleRedirect。 -->
@@ -125,6 +125,7 @@
         <div class="filter-bar">
           <input type="search" id="searchKeyword" placeholder="🔍 搜尋備註 / 類別 / 金額" />
           <button class="chip-btn" id="toggleFilters">篩選 ▾</button>
+          <button class="chip-btn" id="selRecordsBtn">☑ 選擇</button>
         </div>
         <div class="filter-panel" id="filterPanel" hidden>
           <div class="field-row">
@@ -173,6 +174,7 @@
           <button class="seg active" data-billfilter="all">全部</button>
           <button class="seg" data-billfilter="unpaid">未繳</button>
           <button class="seg" data-billfilter="paid">已繳</button>
+          <button class="seg" id="selBillsBtn" style="margin-left:6px">選擇</button>
         </div>
         <div id="billsList" class="bill-list"></div>
         <button class="fab secondary" id="addBillBtn">＋ 新增繳費項目</button>
@@ -419,6 +421,14 @@
       <button class="tab" data-view="stats"><span>📊</span>統計</button>
       <button class="tab" data-view="accounts"><span>💳</span>帳戶</button>
     </nav>
+
+    <!-- 批量選擇操作條 -->
+    <div class="sel-bar" id="selBar" hidden>
+      <button class="sel-cancel" id="selCancel">取消</button>
+      <span class="sel-count" id="selCount">已選 0 項</span>
+      <button class="sel-all" id="selAll">全選</button>
+      <button class="sel-delete" id="selDelete" disabled>刪除 (0)</button>
+    </div>
   </div>
 
   <!-- ============ 交易編輯彈窗 ============ -->
@@ -661,7 +671,7 @@
   <!-- Toast -->
   <div id="toast" class="toast" hidden></div>
 
-  <script src="js/cloud.yu-v3.50.js?v=yu-v3.50"></script>
-  <script src="js/app.yu-v3.50.js?v=yu-v3.50"></script>
+  <script src="js/cloud.yu-v3.51.js?v=yu-v3.51"></script>
+  <script src="js/app.yu-v3.51.js?v=yu-v3.51"></script>
 </body>
 </html>
