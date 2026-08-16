@@ -5,8 +5,8 @@
   --surface-2: #f7f9fc;
   --border: #e9edf3;
   --text: #0f172a;
-  --text-2: #64748b;
-  --text-3: #94a3b8;
+  --text-2: #475569;
+  --text-3: #64748b;
   /* 品牌藍 */
   --primary: #2563eb;
   --primary-dark: #1d4ed8;
@@ -85,7 +85,7 @@ body {
 .card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .card-head h2 { font-size: 15px; font-weight: 700; }
 .card-label { font-size: 12px; color: var(--text-2); }
-.card-value { font-size: 24px; font-weight: 800; letter-spacing: -.5px; }
+.card-value { font-size: 24px; font-weight: 800; letter-spacing: -.5px; font-variant-numeric: tabular-nums; }
 .card-hint { font-size: 11px; color: var(--text-3); margin-top: 2px; }
 
 .summary-cards { display: flex; flex-direction: column; gap: 12px; }
@@ -115,7 +115,7 @@ body {
 .txn-main { flex: 1; min-width: 0; }
 .txn-cat { font-weight: 600; font-size: 14px; }
 .txn-meta { font-size: 12px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.txn-amount { font-weight: 700; font-size: 15px; white-space: nowrap; }
+.txn-amount { font-weight: 700; font-size: 15px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .txn-amount.expense { color: var(--expense); }
 .txn-amount.income { color: var(--income); }
 .empty { text-align: center; color: var(--text-3); padding: 26px 10px; font-size: 13px; }
@@ -130,6 +130,7 @@ body {
   border: 1px solid var(--border); background: var(--surface); border-radius: 12px;
   padding: 0 14px; font-size: 13px; cursor: pointer; white-space: nowrap;
 }
+.chip-btn.active { background: var(--primary-soft); color: var(--primary); border-color: var(--primary); }
 .filter-panel { background: var(--surface); border-radius: var(--radius); padding: 14px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 10px; }
 .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .field-toggle { display: flex; align-items: center; justify-content: space-between; cursor: pointer; }
@@ -153,7 +154,7 @@ body {
 .bill-main { flex: 1; min-width: 0; }
 .bill-name { font-weight: 700; font-size: 15px; }
 .bill-sub { font-size: 12px; color: var(--text-2); margin-top: 2px; }
-.bill-amt { font-weight: 700; color: var(--expense); }
+.bill-amt { font-weight: 700; color: var(--expense); font-variant-numeric: tabular-nums; }
 .bill-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
 .pay-btn { border: none; border-radius: 20px; padding: 6px 14px; font-size: 12px; font-weight: 700; cursor: pointer; }
 .pay-btn.unpaid { background: var(--primary); color: #fff; }
@@ -202,7 +203,7 @@ body {
 .account-icon { width: 40px; height: 40px; border-radius: 11px; display: flex; align-items: center; justify-content: center; font-size: 20px; background: var(--primary-soft); }
 .account-name { font-weight: 700; }
 .account-tag { font-size: 11px; color: var(--text-2); }
-.account-bal { font-size: 20px; font-weight: 800; }
+.account-bal { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .account-bal.neg { color: var(--expense); }
 .account-count { font-size: 12px; color: var(--text-3); margin-top: 6px; }
 
@@ -723,4 +724,12 @@ select#txnCurrency, select#billCurrency { max-width: none; }
   color: var(--text-3);
   font-size: 13px;
   line-height: 1.6;
+}
+.empty::before {
+  content: '📭';
+  display: block;
+  font-size: 34px;
+  line-height: 1;
+  margin-bottom: 8px;
+  opacity: .5;
 }
