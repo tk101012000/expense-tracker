@@ -14,7 +14,7 @@
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="css/styles.css?v=yu-v3.52" />
+  <link rel="stylesheet" href="css/styles.css?v=yu-v3.53" />
   <!-- OAuth 回傳橋接：本頁若在「系統瀏覽器 / Chrome Custom Tabs」（非 App 內 WebView）載入，
        且網址帶 ?code=（Google 授權回傳），則改以自訂 scheme 把 code/state 回傳給 Android App，
        避開嵌入 WebView 的 disallowed_useragent。桌面瀏覽器（非 Android）不攔截，照常走 handleRedirect。 -->
@@ -106,6 +106,7 @@
         <div class="card">
           <div class="card-head">
             <h2>本月支出佔比</h2>
+            <button class="link-btn" data-goto="stats">查看統計</button>
           </div>
           <canvas id="dashDoughnut" height="220"></canvas>
           <div id="dashLegend" class="legend"></div>
@@ -176,6 +177,7 @@
           <button class="seg" data-billfilter="paid">已繳</button>
           <button class="chip-btn sel-toggle" id="selBillsBtn" style="margin-left:auto">選擇</button>
         </div>
+        <button class="report-link" data-goto="billstats">📑 繳費統計分析</button>
         <div id="billsList" class="bill-list"></div>
         <button class="fab secondary" id="addBillBtn">＋ 新增繳費項目</button>
       </section>
@@ -209,12 +211,8 @@
           <div class="card-head"><h2 id="billCatTitle">類別佔比（年度）</h2></div>
           <canvas id="billCatDoughnut" height="220"></canvas>
           <div id="billCatLegend" class="legend"></div>
-        </div>
-
-        <div class="card">
-          <div class="card-head"><h2>週期分佈（年度金額）</h2></div>
-          <canvas id="billCycleDoughnut" height="220"></canvas>
-          <div id="billCycleLegend" class="legend"></div>
+          <div class="sub-head">週期分佈（年度金額）</div>
+          <div class="cycle-bars" id="billCycleBars"></div>
         </div>
 
         <div class="card">
@@ -411,14 +409,12 @@
       </footer>
     </main>
 
-    <!-- 底部導覽 -->
+    <!-- 底部導覽（Tier 2：7→5，報表改情境入口） -->
     <nav class="tabbar">
       <button class="tab active" data-view="dashboard"><span>🏠</span>總覽</button>
       <button class="tab" data-view="records"><span>📒</span>記帳</button>
-      <button class="tab" data-view="bills"><span>📅</span>繳費</button>
       <button class="tab fab-tab" id="fabAdd">＋</button>
-      <button class="tab" data-view="billstats"><span>📑</span>繳費統計</button>
-      <button class="tab" data-view="stats"><span>📊</span>統計</button>
+      <button class="tab" data-view="bills"><span>📅</span>繳費</button>
       <button class="tab" data-view="accounts"><span>💳</span>帳戶</button>
     </nav>
 
@@ -671,7 +667,7 @@
   <!-- Toast -->
   <div id="toast" class="toast" hidden></div>
 
-  <script src="js/cloud.yu-v3.52.js?v=yu-v3.52"></script>
-  <script src="js/app.yu-v3.52.js?v=yu-v3.52"></script>
+  <script src="js/cloud.yu-v3.53.js?v=yu-v3.53"></script>
+  <script src="js/app.yu-v3.53.js?v=yu-v3.53"></script>
 </body>
 </html>

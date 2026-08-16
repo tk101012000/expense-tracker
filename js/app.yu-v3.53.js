@@ -108,8 +108,8 @@ const ACCOUNT_META = {
 const CHART_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#f59e0b', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#14b8a6', '#6366f1', '#a855f7', '#eab308', '#64748b'];
 
 /* ---------- 版本資訊 ---------- */
-const APP_VERSION = 'yu-v3.52';
-const APP_BUILD_DATE = '2026-08-17';
+const APP_VERSION = 'yu-v3.53';
+const APP_BUILD_DATE = '2026-08-16';
 // 暴露給原生 APP（TWA）讀取，使頁尾版本號隨網頁自動更新
 window.APP_VERSION = APP_VERSION;
 window.APP_BUILD_DATE = APP_BUILD_DATE;
@@ -791,6 +791,23 @@ function renderBillRank(list, elId, iconFn) {
   }).join('') : '<div class="empty">尚無繳費項目</div>';
 }
 
+// 週期分佈：以緊湊橫條內嵌（Tier 2 取代原 doughnut 卡片）
+function renderBillCycleBars(cycles) {
+  const el = $('#billCycleBars');
+  if (!el) return;
+  if (!cycles.length) { el.innerHTML = '<div class="empty">尚無週期設定</div>'; return; }
+  const total = cycles.reduce((s, c) => s + c.value, 0) || 1;
+  el.innerHTML = cycles.map((c, i) => {
+    const pct = (c.value / total * 100).toFixed(0);
+    const barColor = CHART_COLORS[i % CHART_COLORS.length];
+    return `<div class="cycle-row">
+      <span class="cycle-name">${escapeHtml(c.name)}</span>
+      <div class="cycle-track"><div class="cycle-fill" style="width:${pct}%;background:${barColor}"></div></div>
+      <span class="cycle-val">${fmtMoney(c.value)}</span>
+    </div>`;
+  }).join('');
+}
+
 function renderBillStats() {
   const m = billStatMonth;            // null = 全年；1-12 = 指定月份
   const monthLabel = m ? m + '月' : '全年';
@@ -858,9 +875,9 @@ function renderBillStats() {
     $('#billTopTitle').textContent = '金額最高項目 Top 5';
   }
 
-  // 週期分佈（年度金額，不隨月份切換改變）
+  // 週期分佈（年度金額，不隨月份切換改變）— Tier 2：內嵌為緊湊橫條
   const cycles = billCycleAnnual();
-  drawDoughnut($('#billCycleDoughnut'), cycles, $('#billCycleLegend'), { centerLabel: '年度', emptyText: '尚無週期設定' });
+  renderBillCycleBars(cycles);
   // 近 12 個月預估（年度視角，不隨月份切換改變）
   const months = [];
   const now = new Date();

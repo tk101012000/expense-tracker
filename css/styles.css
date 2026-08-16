@@ -101,6 +101,28 @@ body {
 .pill { font-size: 12px; background: var(--primary-soft); color: var(--primary); padding: 3px 10px; border-radius: 20px; font-weight: 600; }
 .link-btn { background: none; border: none; color: var(--primary); font-size: 13px; cursor: pointer; }
 
+/* Tier 2：情境報表入口 / 內嵌週期分佈橫條 */
+.report-link {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  width: 100%; margin: 10px 0 2px; padding: 11px;
+  border: 1px solid var(--border); border-radius: 12px;
+  background: var(--surface); color: var(--primary);
+  font-size: 14px; font-weight: 600; cursor: pointer;
+  transition: background .15s ease, border-color .15s ease, transform .12s ease;
+}
+.report-link:hover { background: var(--primary-soft); border-color: var(--primary); }
+.report-link:active { transform: scale(.99); }
+.sub-head {
+  margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--border);
+  font-size: 13px; font-weight: 700; color: var(--text-2);
+}
+.cycle-bars { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+.cycle-row { display: flex; align-items: center; gap: 10px; }
+.cycle-name { flex: 0 0 48px; font-size: 12px; color: var(--text-2); }
+.cycle-track { flex: 1; height: 8px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
+.cycle-fill { height: 100%; border-radius: 4px; }
+.cycle-val { flex: 0 0 auto; font-size: 12px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+
 /* ---------- Transaction list ---------- */
 .txn-list, .bill-list, .account-list, .reminder-list, .rank-list { display: flex; flex-direction: column; gap: 8px; }
 .txn-item {
