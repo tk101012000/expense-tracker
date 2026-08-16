@@ -14,7 +14,7 @@
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="css/styles.css?v=yu-v3.54" />
+  <link rel="stylesheet" href="css/styles.css?v=yu-v3.55" />
   <!-- OAuth 回傳橋接：本頁若在「系統瀏覽器 / Chrome Custom Tabs」（非 App 內 WebView）載入，
        且網址帶 ?code=（Google 授權回傳），則改以自訂 scheme 把 code/state 回傳給 Android App，
        避開嵌入 WebView 的 disallowed_useragent。桌面瀏覽器（非 Android）不攔截，照常走 handleRedirect。 -->
@@ -119,6 +119,14 @@
             <button class="link-btn" data-goto="records">查看全部</button>
           </div>
           <div id="recentList" class="txn-list"></div>
+        </div>
+
+        <div class="card" id="dashTripsCard">
+          <div class="card-head">
+            <h2>🧳 我的旅程</h2>
+            <button class="link-btn" data-goto="trips">查看</button>
+          </div>
+          <div id="dashTrips" class="trip-mini-list"></div>
         </div>
       </section>
 
@@ -404,6 +412,18 @@
         </div>
       </section>
 
+      <!-- ============ 旅遊記帳 ============ -->
+      <section class="view" data-view="trips" hidden>
+        <div class="view-toolbar">
+          <h2 id="tripsViewTitle">我的旅程</h2>
+          <button class="primary-btn small" id="addTripBtn">＋ 新增旅程</button>
+        </div>
+        <div id="tripsListWrap">
+          <div id="tripsList" class="trip-list"></div>
+        </div>
+        <div id="tripDetailWrap" hidden></div>
+      </section>
+
       <footer class="app-footer">
         <span id="appVersion">v—</span>
         <span id="appBuildDate"></span>
@@ -479,6 +499,9 @@
           </label>
           <label class="field">付款人（誰付錢）
             <select id="txnPaidBy"><option value="">未指定</option></select>
+          </label>
+          <label class="field">所屬旅程
+            <select id="txnTrip"><option value="">無（一般記帳）</option></select>
           </label>
         </div>
         <div class="form-section" id="txnSplitWrap">
@@ -656,6 +679,55 @@
     </div>
   </div>
 
+  <!-- ============ 旅遊記帳：旅程編輯彈窗 ============ -->
+  <div class="modal" id="tripModal" hidden>
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3 id="tripModalTitle">新增旅程</h3>
+        <button class="icon-btn" type="button" data-close>✕</button>
+      </div>
+      <form id="tripForm" class="modal-body groups">
+        <div class="form-section">
+          <div class="form-section-title">基本資料</div>
+          <label class="field">旅程名稱 <span class="req">*</span>
+            <input type="text" id="tripName" maxlength="20" placeholder="例：東京 5 日遊" />
+            <small class="err" id="errTripName"></small>
+          </label>
+          <label class="field">目的地
+            <input type="text" id="tripDest" maxlength="30" placeholder="例：日本東京" />
+          </label>
+          <div class="field-row">
+            <label class="field">開始日期 <input type="date" id="tripStart" /></label>
+            <label class="field">結束日期 <input type="date" id="tripEnd" /></label>
+          </div>
+        </div>
+        <div class="form-section">
+          <div class="form-section-title">預算與幣別</div>
+          <div class="field-row">
+            <label class="field">預算 <input type="number" id="tripBudget" step="0.01" min="0" placeholder="0.00" /></label>
+            <label class="field">幣別 <select id="tripCurrency"></select></label>
+          </div>
+          <label class="field">外幣匯率（選填）
+            <input type="text" id="tripRates" placeholder="例：JPY:0.21,USD:31" />
+            <small class="hint">格式：幣別代碼:匯率（1 單位外幣可換多少旅程幣別）。留空則不換算。</small>
+          </label>
+        </div>
+        <div class="form-section">
+          <div class="form-section-title">參與成員</div>
+          <div class="member-chips" id="tripMembers"></div>
+          <small class="hint">未選則結算時自動納入有花費的成員。</small>
+        </div>
+        <label class="field">備註
+          <input type="text" id="tripNote" maxlength="40" placeholder="選填" />
+        </label>
+        <div class="modal-actions">
+          <button type="button" class="ghost-btn" id="deleteTripBtn" hidden>刪除</button>
+          <button type="submit" class="primary-btn">儲存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- ============ 分擔計算機彈窗 ============ -->
   <div class="modal" id="splitCalcModal" hidden>
     <div class="modal-card">
@@ -706,7 +778,7 @@
   <!-- Toast -->
   <div id="toast" class="toast" hidden></div>
 
-  <script src="js/cloud.yu-v3.54.js?v=yu-v3.54"></script>
-  <script src="js/app.yu-v3.54.js?v=yu-v3.54"></script>
+  <script src="js/cloud.yu-v3.55.js?v=yu-v3.55"></script>
+  <script src="js/app.yu-v3.55.js?v=yu-v3.55"></script>
 </body>
 </html>

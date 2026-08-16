@@ -110,7 +110,7 @@ const CHART_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#f59e0b', '#8b5cf6', '#0
 function cssVar(name, fallback) { const v = getComputedStyle(document.body).getPropertyValue(name); return v ? v.trim() : (fallback || ''); }
 
 /* ---------- 版本資訊 ---------- */
-const APP_VERSION = 'yu-v3.54';
+const APP_VERSION = 'yu-v3.55';
 const APP_BUILD_DATE = '2026-08-16';
 // 暴露給原生 APP（TWA）讀取，使頁尾版本號隨網頁自動更新
 window.APP_VERSION = APP_VERSION;
@@ -189,7 +189,7 @@ function load() {
     DB = {};
   }
   // 確保所有陣列存在
-  DB.accounts ||= []; DB.txns ||= []; DB.bills ||= []; DB.members ||= [];
+  DB.accounts ||= []; DB.txns ||= []; DB.bills ||= []; DB.members ||= []; DB.trips ||= [];
   // v3.20：貨幣設定（首次使用依地區自動選取，之後以使用者選擇為準）
   DB.settings ||= {};
   const savedCode = DB.settings.currency;
@@ -264,10 +264,11 @@ function monthTotals(mk) {
    導覽
    ========================================================= */
 let currentView = 'dashboard';
-const VIEW_TITLE = { dashboard: '總覽', records: '記帳', bills: '繳費管理', stats: '統計報表', billstats: '繳費統計', accounts: '帳戶' };
+const VIEW_TITLE = { dashboard: '總覽', records: '記帳', bills: '繳費管理', stats: '統計報表', billstats: '繳費統計', accounts: '帳戶', trips: '我的旅程' };
 
 function switchView(v) {
   if (selMode) exitSelMode();   // 切換頁面時退出批量選擇
+  tripDetailId = null;          // 離開/進入旅遊頁都回到列表
   currentView = v;
   // 進入繳費統計頁時，預設顯示當前月份（頁內上一月/下一月切換不受影響）
   if (v === 'billstats') billStatMonth = new Date().getMonth() + 1;
@@ -296,6 +297,7 @@ function render() {
   else if (currentView === 'stats') renderStats();
   else if (currentView === 'billstats') renderBillStats();
   else if (currentView === 'accounts') renderAccounts();
+  else if (currentView === 'trips') renderTrips();
   renderReminderBadge();
   if (selMode) updateSelBar();   // 搜尋/篩選後同步選取計數
 }
@@ -394,6 +396,9 @@ function renderDashboard() {
   // 最近交易
   const recent = [...DB.txns].sort((a, b) => (b.date + b.createdAt).localeCompare(a.date + a.createdAt)).slice(0, 6);
   $('#recentList').innerHTML = recent.length ? recent.map(txnRowHtml).join('') : '<div class="empty">尚無交易，點擊 ＋ 開始記帳</div>';
+
+  // 旅遊記帳迷你卡片
+  renderDashTrips();
 
   // 清除本次 render 的暫存快取
   invalidateReminderCache();
@@ -1270,6 +1275,7 @@ function openTxnModal(id) {
     fillAccountSelect($('#txnAccount'), t.accountId);
     fillMemberSelect($('#txnPaidBy'), t.paidBy, false);
     fillCurrencySelect($('#txnCurrency'), t.currency);
+    fillTripSelect($('#txnTrip'), t.tripId || '');
   } else {
     txnType = 'expense';
     $('#txnAmount').value = '';
@@ -1279,6 +1285,7 @@ function openTxnModal(id) {
     fillAccountSelect($('#txnAccount'), DB.accounts[0] && DB.accounts[0].id);
     fillMemberSelect($('#txnPaidBy'), DB.members[0] ? DB.members[0].id : '', false);
     fillCurrencySelect($('#txnCurrency'), ''); // 預設用全域設定幣別
+    fillTripSelect($('#txnTrip'), '');
   }
   // 載入分擔狀態（收入不支援分擔，隱藏編輯器）
   splitEditorLoad(txnSplit, id ? DB.txns.find(x => x.id === id) : null);
@@ -1315,6 +1322,7 @@ function saveTxn(e) {
     category: $('#txnCategory').value, accountId: $('#txnAccount').value,
     note: $('#txnNote').value.trim(), paidBy: paidBy || '',
     currency: $('#txnCurrency').value || DB.settings.currency || CURRENCIES[0].code,
+    tripId: $('#txnTrip').value || '',
     // 收入不支援分擔；支出才帶 splitMode/shares
     ...splitEditorToData(txnSplit, txnType === 'expense'),
   };
@@ -2207,7 +2215,7 @@ function exportCSV() {
 // #9 修復：匯入 schema 白名單校驗，攔截 prototype pollution 與欄位缺失
 const IMPORT_ALLOWED_TOP_KEYS = ['accounts', 'txns', 'bills', 'members', 'settings'];
 const TXN_REQUIRED_FIELDS = ['id', 'type', 'amount', 'date'];
-const TXN_ALLOWED_FIELDS = ['id', 'type', 'amount', 'date', 'category', 'accountId', 'note', 'createdAt', 'paidBy', '_fromBill', 'splitMode', 'shares', 'currency'];
+const TXN_ALLOWED_FIELDS = ['id', 'type', 'amount', 'date', 'category', 'accountId', 'note', 'createdAt', 'paidBy', '_fromBill', 'splitMode', 'shares', 'currency', 'tripId'];
 const ACC_ALLOWED_FIELDS = ['id', 'name', 'type', 'balance', 'note'];
 const BILL_ALLOWED_FIELDS = ['id', 'name', 'amount', 'category', 'accountId', 'cycle', 'dueDate', 'note', 'paid', 'splitMode', 'shares', 'currency'];
 const MEMBER_ALLOWED_FIELDS = ['id', 'name'];
@@ -2264,7 +2272,7 @@ function doImport(parsed) {
   if (!confirm('匯入將覆蓋目前所有資料，確定繼續？')) return false;
   DB = sanitized;
   DB.settings ||= {};
-  DB.accounts ||= []; DB.txns ||= []; DB.bills ||= []; DB.members ||= [];
+  DB.accounts ||= []; DB.txns ||= []; DB.bills ||= []; DB.members ||= []; DB.trips ||= [];
   if (!save()) return false;  // #8 修復
   render(); toast('匯入成功');
   return true;
@@ -2472,6 +2480,7 @@ function bindEvents() {
   bindTxnEvents();
   bindAccountEvents();
   bindMemberEvents();
+  bindTripsEvents();
   bindBillEvents();
   bindListDelegation();
   bindSelEvents();
@@ -2593,6 +2602,378 @@ function showConfirm(opts) {
   ok.onclick = () => { close(); if (opts.onConfirm) opts.onConfirm(); };
 }
 
+/* =========================================================
+   旅遊記帳  yu-v3.55
+   旅程：DB.trips[] = { id, name, destination, startDate, endDate,
+                        budget, currency, memberIds:[], rates:{}, note }
+   交易：txn.tripId（選填，歸屬某旅程）
+   ========================================================= */
+let editTripId = null;
+let tripDetailId = null;      // 當前檢視的旅程明細（null = 列表）
+let lastNewTripId = null;     // 從記帳彈窗內新增旅程後，回填用
+
+// 外幣 → 旅程幣別 換算（rate = 1 單位外幣可換多少旅程幣別）
+function tripConvert(amount, fromCode, toCode, rates) {
+  if (!fromCode || fromCode === toCode) return amount;
+  const r = rates && rates[fromCode];
+  return r ? amount * r : amount;
+}
+function parseTripRates(str) {
+  const out = {};
+  if (!str) return out;
+  str.split(',').forEach(p => {
+    const i = p.indexOf(':');
+    if (i < 0) return;
+    const code = p.slice(0, i).trim().toUpperCase();
+    const n = parseFloat(p.slice(i + 1));
+    if (code && !isNaN(n) && n > 0) out[code] = n;
+  });
+  return out;
+}
+function ratesToText(rates) {
+  if (!rates || !Object.keys(rates).length) return '';
+  return Object.entries(rates).map(([c, v]) => `${c}:${v}`).join(',');
+}
+function fillTripSelect(sel, selected) {
+  const opts = '<option value="">無（一般記帳）</option>'
+    + DB.trips.map(t => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join('')
+    + (DB.trips.length ? '<option value="__new">＋ 新增旅程…</option>' : '');
+  sel.innerHTML = opts;
+  sel.value = selected || '';
+}
+// 旅程已花費（僅支出，依旅程幣別換算後合計）
+function tripSpent(trip) {
+  const tcur = trip.currency || DB.settings.currency;
+  return DB.txns.filter(t => t.tripId === trip.id && t.type === 'expense')
+    .reduce((s, t) => s + tripConvert(t.amount, t.currency, tcur, trip.rates), 0);
+}
+function tripTxns(trip) {
+  return DB.txns.filter(t => t.tripId === trip.id)
+    .sort((a, b) => (b.date + (b.createdAt || 0)).localeCompare(a.date + (a.createdAt || 0)));
+}
+// 旅程內每人結算：paid=墊付, payable=應負擔；無分擔時由付款人全額負擔
+function computeTripSettle(trip) {
+  const tcur = trip.currency || DB.settings.currency;
+  const conv = (amt, code) => tripConvert(amt, code, tcur, trip.rates);
+  const map = new Map();
+  (trip.memberIds || []).forEach(id => {
+    const m = DB.members.find(x => x.id === id);
+    if (m) map.set(id, { id, name: m.name, payable: 0, paid: 0 });
+  });
+  const txns = DB.txns.filter(t => t.tripId === trip.id && t.type === 'expense');
+  let total = 0, count = 0;
+  txns.forEach(t => {
+    const v = conv(t.amount, t.currency);
+    total += v; count++;
+    const payerId = t.paidBy || '';
+    if (payerId) {
+      if (!map.has(payerId)) {
+        const m = DB.members.find(x => x.id === payerId);
+        if (m) map.set(payerId, { id: payerId, name: m.name, payable: 0, paid: 0 });
+      }
+      map.get(payerId).paid += v;
+    }
+    if (t.splitMode && t.splitMode !== 'none' && Array.isArray(t.shares) && t.shares.length) {
+      const amts = computeSplitAmounts(t.amount, t.splitMode, t.shares);
+      amts.forEach(a => {
+        if (!a.memberId) return;
+        const share = conv(a.amount, t.currency);
+        if (!map.has(a.memberId)) {
+          const m = DB.members.find(x => x.id === a.memberId);
+          if (m) map.set(a.memberId, { id: a.memberId, name: m.name, payable: 0, paid: 0 });
+        }
+        map.get(a.memberId).payable += share;
+      });
+    } else if (payerId) {
+      map.get(payerId).payable += v;   // 無分擔：付款人全額負擔
+    }
+  });
+  const rows = [...map.values()].filter(r => r.payable > 0 || r.paid > 0)
+    .map(r => ({ ...r, net: Math.round((r.paid - r.payable) * 100) / 100 }));
+  rows.sort((a, b) => b.net - a.net);
+  return { rows, total: Math.round(total * 100) / 100, count };
+}
+// 由每人淨額產生「誰該付給誰」清單（貪心配對）
+function settleDebts(rows) {
+  const creditors = rows.filter(r => r.net > 0.005).map(r => ({ name: r.name, amt: r.net }));
+  const debtors = rows.filter(r => r.net < -0.005).map(r => ({ name: r.name, amt: -r.net }));
+  creditors.sort((a, b) => b.amt - a.amt); debtors.sort((a, b) => b.amt - a.amt);
+  const out = []; let i = 0, j = 0;
+  while (i < creditors.length && j < debtors.length) {
+    const pay = Math.min(creditors[i].amt, debtors[j].amt);
+    out.push({ from: debtors[j].name, to: creditors[i].name, amt: Math.round(pay * 100) / 100 });
+    creditors[i].amt -= pay; debtors[j].amt -= pay;
+    if (creditors[i].amt <= 0.005) i++;
+    if (debtors[j].amt <= 0.005) j++;
+  }
+  return out;
+}
+
+function renderTrips() {
+  const listWrap = $('#tripsListWrap'), detailWrap = $('#tripDetailWrap');
+  if (tripDetailId && !DB.trips.find(t => t.id === tripDetailId)) tripDetailId = null;
+  if (tripDetailId) {
+    listWrap.hidden = true; detailWrap.hidden = false;
+    renderTripDetail(tripDetailId);
+  } else {
+    listWrap.hidden = false; detailWrap.hidden = true;
+    $('#tripsViewTitle').textContent = '我的旅程';
+    const list = $('#tripsList');
+    if (!DB.trips.length) {
+      list.innerHTML = '<div class="empty">尚未建立旅程，點擊右上「＋ 新增旅程」開始規劃 🧳</div>';
+      return;
+    }
+    const tcur0 = DB.settings.currency;
+    list.innerHTML = DB.trips.map(t => {
+      const tcur = t.currency || tcur0;
+      const spent = tripSpent(t);
+      const budget = Number(t.budget) || 0;
+      const pct = budget > 0 ? Math.min(100, Math.round(spent / budget * 100)) : 0;
+      const over = budget > 0 && spent > budget;
+      const days = (t.startDate && t.endDate) ? `${t.startDate} ~ ${t.endDate}` : (t.startDate || t.endDate || '未設日期');
+      const memCnt = (t.memberIds && t.memberIds.length) || 0;
+      return `<div class="trip-card" data-trip="${t.id}">
+        <div class="trip-card-head">
+          <div class="trip-title">🧳 ${escapeHtml(t.name)}</div>
+          <button class="trip-edit" data-edit-trip="${t.id}" title="編輯">✎</button>
+        </div>
+        <div class="trip-meta">📍 ${escapeHtml(t.destination || '未填目的地')} · ${escapeHtml(days)}</div>
+        <div class="trip-budget">
+          <div class="trip-budget-row">
+            <span>已花 ${fmtMoneyCur(Math.round(spent * 100) / 100, tcur)}</span>
+            <span>${budget > 0 ? ('預算 ' + fmtMoneyCur(budget, tcur)) : '未設預算'}</span>
+          </div>
+          <div class="budget-track"><div class="budget-fill ${over ? 'over' : ''}" style="width:${pct}%"></div></div>
+        </div>
+        <div class="trip-foot">${memCnt ? ('👥 ' + memCnt + ' 人') : ''} · ${tripTxns(t).length} 筆花費</div>
+      </div>`;
+    }).join('');
+  }
+}
+
+function renderTripDetail(id) {
+  const trip = DB.trips.find(t => t.id === id);
+  const wrap = $('#tripDetailWrap');
+  if (!trip) { wrap.innerHTML = ''; return; }
+  const tcur = trip.currency || DB.settings.currency;
+  const spent = tripSpent(trip);
+  const budget = Number(trip.budget) || 0;
+  const remaining = budget - spent;
+  const pct = budget > 0 ? Math.min(100, Math.round(spent / budget * 100)) : 0;
+  const over = budget > 0 && spent > budget;
+  const txns = tripTxns(trip);
+  const catMap = {};
+  txns.filter(t => t.type === 'expense').forEach(t => {
+    const v = tripConvert(t.amount, t.currency, tcur, trip.rates);
+    catMap[t.category || '其他'] = (catMap[t.category || '其他'] || 0) + v;
+  });
+  const catData = Object.entries(catMap).map(([name, value]) => ({ name, value: Math.round(value * 100) / 100 }));
+  const settle = computeTripSettle(trip);
+  const debts = settleDebts(settle.rows);
+  const days = (trip.startDate && trip.endDate) ? `${trip.startDate} ~ ${trip.endDate}` : (trip.startDate || trip.endDate || '未設日期');
+  wrap.innerHTML = `
+    <div class="trip-detail-head">
+      <button class="back-btn" id="tripBackBtn">← 返回</button>
+      <div class="trip-detail-title">
+        <h2>🧳 ${escapeHtml(trip.name)}</h2>
+        <p>${escapeHtml(trip.destination || '未填目的地')} · ${escapeHtml(days)}</p>
+      </div>
+      <button class="ghost-btn small" id="tripEditBtn">編輯</button>
+    </div>
+    <div class="card">
+      <div class="card-head"><h2>預算概覽</h2></div>
+      <div class="trip-budget big">
+        <div class="trip-budget-row">
+          <span>已花 ${fmtMoneyCur(Math.round(spent * 100) / 100, tcur)}</span>
+          <span class="${over ? 'over-text' : ''}">${budget > 0 ? ('剩餘 ' + fmtMoneyCur(Math.round(remaining * 100) / 100, tcur)) : '未設預算'}</span>
+        </div>
+        ${budget > 0 ? `<div class="budget-track"><div class="budget-fill ${over ? 'over' : ''}" style="width:${pct}%"></div></div>` : ''}
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head"><h2>類別佔比</h2></div>
+      <canvas id="tripCatDoughnut" height="220"></canvas>
+      <div id="tripCatLegend" class="legend"></div>
+    </div>
+    <div class="card">
+      <div class="card-head"><h2>👥 團員結算</h2></div>
+      ${settle.rows.length ? `
+      <div class="settle-list">
+        ${settle.rows.map(r => {
+          const net = r.net;
+          const cls = net > 0.005 ? 'recv' : (net < -0.005 ? 'owe' : 'even');
+          const txt = net > 0.005 ? `應收 ${fmtMoneyCur(net, tcur)}` : (net < -0.005 ? `應付 ${fmtMoneyCur(-net, tcur)}` : '已兩清');
+          return `<div class="pay-row">
+            <div class="pay-top"><span class="pay-name">${escapeHtml(r.name)}</span><span class="pay-net ${cls}">${txt}</span></div>
+            <div class="pay-detail"><span>應付 ${fmtMoneyCur(Math.round(r.payable * 100) / 100, tcur)}</span><span class="dot">·</span><span>已付 ${fmtMoneyCur(Math.round(r.paid * 100) / 100, tcur)}</span></div>
+          </div>`;
+        }).join('')}
+      </div>
+      ${debts.length ? `<div class="settle-debts"><div class="settle-debts-title">💸 誰該付給誰</div>${debts.map(d => `<div class="settle-debt-row">${escapeHtml(d.from)} → ${escapeHtml(d.to)} <b>${fmtMoneyCur(d.amt, tcur)}</b></div>`).join('')}</div>` : '<div class="empty">大家已兩清 🎉</div>'}
+      ` : '<div class="empty">尚無可結算的花費（請在記帳時選擇「所屬旅程」並指定付款人）</div>'}
+    </div>
+    <div class="card">
+      <div class="card-head"><h2>花費明細（${txns.length} 筆）</h2></div>
+      <div class="txn-list">
+        ${txns.length ? txns.map(t => tripTxnRow(t, tcur)).join('') : '<div class="empty">這趟旅程還沒有花費記錄</div>'}
+      </div>
+    </div>`;
+  setTimeout(() => {
+    const c = $('#tripCatDoughnut');
+    if (c) drawDoughnut(c, catData, $('#tripCatLegend'), { emptyText: '尚無支出' });
+  }, 0);
+  const back = $('#tripBackBtn'); if (back) back.addEventListener('click', () => { tripDetailId = null; renderTrips(); });
+  const edit = $('#tripEditBtn'); if (edit) edit.addEventListener('click', () => openTripModal(id));
+}
+
+function tripTxnRow(t, tcur) {
+  const icon = CAT_ICON[t.category] || '📦';
+  const acc = DB.accounts.find(a => a.id === t.accountId);
+  const sp = splitText(t);
+  const payer = t.paidBy && DB.members.find(x => x.id === t.paidBy);
+  return `<div class="txn-item" data-txn="${t.id}">
+    <div class="txn-icon">${icon}</div>
+    <div class="txn-main">
+      <div class="txn-cat">${escapeHtml(t.category)}</div>
+      <div class="txn-meta">${fmtDate(t.date)} · ${acc ? escapeHtml(acc.name) : '未知帳戶'}${payer ? ' · 付：' + escapeHtml(payer.name) : ''}${sp ? ' · ' + escapeHtml(sp) : ''}</div>
+    </div>
+    <div class="txn-amount ${t.type}">${t.type === 'income' ? '+' : '-'}${fmtMoneyCur(t.amount, t.currency || '')}${curBadge(t.currency || '')}</div>
+  </div>`;
+}
+
+function renderDashTrips() {
+  const el = $('#dashTrips'); if (!el) return;
+  if (!DB.trips.length) { el.innerHTML = '<div class="empty" style="padding:14px">還沒有旅程，規劃一趟旅行吧 🧳</div>'; return; }
+  const now = todayISO();
+  const rank = t => {
+    if (t.startDate && t.endDate && now >= t.startDate && now <= t.endDate) return 0;
+    if (t.startDate && now < t.startDate) return 1;
+    return 2;
+  };
+  const sorted = [...DB.trips].sort((a, b) => rank(a) - rank(b));
+  el.innerHTML = sorted.slice(0, 3).map(t => {
+    const tcur = t.currency || DB.settings.currency;
+    const spent = tripSpent(t);
+    const budget = Number(t.budget) || 0;
+    return `<div class="trip-mini" data-goto="trips">
+      <div class="trip-mini-name">🧳 ${escapeHtml(t.name)}</div>
+      <div class="trip-mini-sub">${escapeHtml(t.destination || '')} · 已花 ${fmtMoneyCur(Math.round(spent * 100) / 100, tcur)}${budget > 0 ? (' / ' + fmtMoneyCur(budget, tcur)) : ''}</div>
+    </div>`;
+  }).join('') + `<div class="trip-mini-more"><button class="link-btn" data-goto="trips">查看全部 ${DB.trips.length} 趟 →</button></div>`;
+}
+
+/* ---------- 旅程彈窗 ---------- */
+function renderTripMemberChips(selected) {
+  const box = $('#tripMembers'); if (!box) return;
+  if (!DB.members.length) { box.innerHTML = '<small class="hint">尚無成員，可先到「帳戶」頁新增</small>'; return; }
+  box.innerHTML = DB.members.map(m => `
+    <label class="member-chip">
+      <input type="checkbox" value="${m.id}" ${selected.includes(m.id) ? 'checked' : ''}/> ${escapeHtml(m.name)}
+    </label>`).join('');
+}
+function openTripModal(id) {
+  editTripId = id || null;
+  const modal = $('#tripModal');
+  $('#tripModalTitle').textContent = id ? '編輯旅程' : '新增旅程';
+  $('#deleteTripBtn').hidden = !id;
+  $('#errTripName').textContent = '';
+  if (id) {
+    const t = DB.trips.find(x => x.id === id);
+    if (!t) { toast('該旅程不存在'); modal.hidden = true; render(); return; }
+    $('#tripName').value = t.name || '';
+    $('#tripDest').value = t.destination || '';
+    $('#tripStart').value = t.startDate || '';
+    $('#tripEnd').value = t.endDate || '';
+    $('#tripBudget').value = (t.budget != null ? t.budget : '');
+    fillCurrencySelect($('#tripCurrency'), t.currency || '');
+    $('#tripRates').value = ratesToText(t.rates);
+    $('#tripNote').value = t.note || '';
+    renderTripMemberChips(t.memberIds || []);
+  } else {
+    $('#tripName').value = ''; $('#tripDest').value = '';
+    $('#tripStart').value = ''; $('#tripEnd').value = '';
+    $('#tripBudget').value = '';
+    fillCurrencySelect($('#tripCurrency'), '');
+    $('#tripRates').value = '';
+    $('#tripNote').value = '';
+    renderTripMemberChips([]);
+  }
+  modal.hidden = false;
+}
+function saveTrip(e) {
+  e.preventDefault();
+  const name = $('#tripName').value.trim();
+  if (!name) { $('#errTripName').textContent = '請輸入旅程名稱'; return; }
+  const memberIds = [...document.querySelectorAll('#tripMembers input:checked')].map(c => c.value);
+  const payload = {
+    name,
+    destination: $('#tripDest').value.trim(),
+    startDate: $('#tripStart').value || '',
+    endDate: $('#tripEnd').value || '',
+    budget: parseFloat($('#tripBudget').value) || 0,
+    currency: $('#tripCurrency').value || DB.settings.currency,
+    rates: parseTripRates($('#tripRates').value),
+    note: $('#tripNote').value.trim(),
+    memberIds,
+  };
+  if (editTripId) {
+    const t = DB.trips.find(x => x.id === editTripId);
+    if (!t) { toast('該旅程不存在'); $('#tripModal').hidden = true; render(); return; }
+    Object.assign(t, payload);
+    toast('已更新旅程');
+  } else {
+    const nt = { id: uid(), createdAt: Date.now(), ...payload };
+    DB.trips.push(nt);
+    toast('已新增旅程');
+    lastNewTripId = nt.id;
+  }
+  if (!save()) return;
+  $('#tripModal').hidden = true;
+  if (lastNewTripId && !$('#txnModal').hidden) { fillTripSelect($('#txnTrip'), lastNewTripId); lastNewTripId = null; }
+  if (tripDetailId === editTripId) tripDetailId = null;
+  render();
+}
+function deleteTrip() {
+  if (!editTripId) return;
+  const t = DB.trips.find(x => x.id === editTripId);
+  showConfirm({
+    title: '刪除旅程',
+    message: '確定要刪除這個旅程嗎？旅程內的交易會改回「一般記帳」（不會被刪除）。',
+    danger: true, confirmText: '刪除',
+    context: t ? confirmRows([['旅程', t.name], ['目的地', t.destination || '—'], ['花費筆數', String(tripTxns(t).length)]]) : '',
+    onConfirm: () => {
+      DB.txns.forEach(x => { if (x.tripId === editTripId) x.tripId = ''; });
+      DB.trips = DB.trips.filter(x => x.id !== editTripId);
+      if (!save()) return;
+      $('#tripModal').hidden = true;
+      tripDetailId = null;
+      toast('已刪除旅程');
+      render();
+    }
+  });
+}
+
+function bindTripsEvents() {
+  const addBtn = $('#addTripBtn');
+  if (addBtn) addBtn.addEventListener('click', () => openTripModal());
+  const form = $('#tripForm');
+  if (form) form.addEventListener('submit', saveTrip);
+  const del = $('#deleteTripBtn');
+  if (del) del.addEventListener('click', deleteTrip);
+  const list = $('#tripsList');
+  if (list) list.addEventListener('click', e => {
+    const editBtn = e.target.closest('[data-edit-trip]');
+    if (editBtn) { e.stopPropagation(); openTripModal(editBtn.dataset.editTrip); return; }
+    const card = e.target.closest('[data-trip]');
+    if (card) { tripDetailId = card.dataset.trip; renderTrips(); }
+  });
+  // 記帳彈窗內選「＋ 新增旅程…」→ 開啟旅程彈窗
+  const txnTrip = $('#txnTrip');
+  if (txnTrip) txnTrip.addEventListener('change', () => {
+    if (txnTrip.value === '__new') { openTripModal(); txnTrip.value = ''; }
+  });
+}
+
 function init() {
   applyTheme(getStoredTheme());   // Tier 3A：套用主題（初次依系統偏好）
   load();
@@ -2649,7 +3030,7 @@ window.BK = {
     DB = sanitized;
     // 與 load() 同級防護：確保 settings 與陣列欄位存在（舊版備份可能缺少）
     DB.settings ||= {};
-    DB.accounts ||= []; DB.txns ||= []; DB.bills ||= []; DB.members ||= [];
+    DB.accounts ||= []; DB.txns ||= []; DB.bills ||= []; DB.members ||= []; DB.trips ||= [];
     if (!save()) return;  // #8 修復
     render();
   },
