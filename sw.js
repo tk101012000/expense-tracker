@@ -1,11 +1,11 @@
 /* Service Worker · 離線快取 */
-const CACHE = 'billkeeper-v9';
+const CACHE = 'billkeeper-v10';
 const ASSETS = [
   './',
   './index.html',
   './css/styles.css',
-  './js/app.yu-v3.49.js',
-  './js/cloud.yu-v3.49.js',
+  './js/app.yu-v3.50.js',
+  './js/cloud.yu-v3.50.js',
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png',
