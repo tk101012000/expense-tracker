@@ -514,3 +514,179 @@ select#txnCurrency, select#billCurrency { max-width: none; }
   .txn-item:hover, .bill-item:hover, .account-item:hover, .member-item:hover { background: var(--surface-2); }
   .cur-opt:hover { background: var(--surface-2); }
 }
+
+/* ================================================================
+   v3.48 頁面深入優化 — 總覽首頁 & 繳費統計
+   ================================================================ */
+
+/* --- 總覽：餘額卡片強化 --- */
+.balance-card {
+  position: relative;
+  overflow: hidden;
+}
+/* 裝飾性背景圓 */
+.balance-card::before {
+  content: '';
+  position: absolute;
+  top: -28px;
+  right: -20px;
+  width: 110px;
+  height: 110px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.08);
+  pointer-events: none;
+}
+.balance-card::after {
+  content: '';
+  position: absolute;
+  bottom: -36px;
+  left: -16px;
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.06);
+  pointer-events: none;
+}
+/* 餘額數字更大更突出 */
+.balance-card .card-value {
+  font-size: 28px;
+  letter-spacing: -.8px;
+}
+/* 餘額卡片內容相對定位，蓋在裝飾圓上 */
+.balance-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* --- 總覽：收支迷你卡加強 --- */
+.mini {
+  position: relative;
+  overflow: hidden;
+}
+/* 左側彩色細條指示 */
+.mini.income::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--income);
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+.mini.expense::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--expense);
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+.mini > * {
+  position: relative;
+  z-index: 1;
+}
+/* 迷你卡金額字稍大 */
+.mini .card-value {
+  font-size: 21px;
+}
+
+/* --- 總覽：提醒區強化 --- */
+#reminderPanel {
+  border-left: 3px solid transparent;
+  transition: border-color .2s ease;
+}
+#reminderPanel:has(.dot.overdue) {
+  border-left-color: var(--expense);
+}
+#reminderPanel:has(.dot.soon) {
+  border-left-color: var(--warn);
+}
+.reminder-item {
+  padding: 10px 12px;
+  border-radius: 10px;
+  transition: background .15s ease;
+}
+.reminder-item:active {
+  background: var(--surface-2);
+}
+/* 快速繳費按鈕美化 */
+.pay-btn.unpaid {
+  font-size: 11px;
+  padding: 5px 12px;
+  letter-spacing: .2px;
+  transition: background .15s ease, transform .12s ease;
+}
+.pay-btn.unpaid:active {
+  transform: scale(.95);
+}
+
+/* --- 繳費統計：摘要卡片強化 --- */
+[data-view="billstats"] .balance-card::before,
+[data-view="billstats"] .balance-card::after {
+  /* 繳費統計頁的餘額卡也用同樣裝飾圓 */
+}
+/* 統計三欄數字加大 */
+.stat-summary strong {
+  font-size: 17px;
+  font-weight: 800;
+}
+.stat-summary > div {
+  padding: 14px 6px;
+}
+
+/* --- 圖表區域通用增強 --- */
+.card:has(canvas) {
+  padding: 14px 16px 16px;
+}
+.card:has(canvas) .card-head {
+  margin-bottom: 10px;
+}
+
+/* --- 排行條加粗圓潤（v3.48） --- */
+.rank-bar-wrap {
+  height: 10px;
+  border-radius: 5px;
+}
+.rank-bar {
+  height: 100%;
+  border-radius: 5px;
+  transition: width .35s ease;
+  /* 漸層填充由 JS inline-style 的 background 覆蓋；
+       此處定義 fallback 單色 */
+  background: linear-gradient(90deg, var(--primary), #60a5fa);
+}
+.rank-item {
+  padding: 8px 0;
+}
+.rank-label {
+  font-weight: 600;
+}
+.rank-val {
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Legend 優化 --- */
+.legend-item {
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  transition: background .15s ease;
+}
+.legend-item .sw {
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+}
+
+/* --- 空狀態美化 --- */
+.empty {
+  padding: 32px 10px;
+  color: var(--text-3);
+  font-size: 13px;
+  line-height: 1.6;
+}
