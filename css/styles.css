@@ -853,6 +853,28 @@ body[data-theme="dark"] .skeleton::after { background: linear-gradient(90deg, tr
 .primary-btn.danger:active { filter: brightness(.92); }
 
 /* ================================================================
+   OAuth 兜底面板 (yu-v3.57) — iOS 雲端備份授權失敗時的補救 UI
+   ================================================================ */
+.oauth-fallback {
+  margin-top: 10px; padding: 12px; border: 1px solid var(--warn);
+  border-radius: 12px; background: color-mix(in srgb, var(--warn) 9%, var(--bg-card));
+}
+.oauth-fallback .of-title { font-weight: 700; color: var(--warn); margin-bottom: 4px; }
+.oauth-fallback .of-msg { font-size: 13px; color: var(--text-2); margin: 4px 0; }
+.oauth-fallback .of-hint { font-size: 12px; color: var(--text-3); margin: 8px 0 4px; }
+.oauth-fallback .of-hint code { background: var(--bg); padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+.oauth-fallback .of-textarea {
+  width: 100%; min-height: 52px; border: 1px solid var(--border); border-radius: 8px;
+  padding: 8px; font-size: 12px; font-family: monospace; resize: vertical;
+  background: var(--bg-card); color: var(--text); box-sizing: border-box;
+}
+.oauth-fallback .of-actions { display: flex; gap: 8px; margin: 8px 0; }
+.oauth-fallback .of-code {
+  font-size: 11px; color: var(--text-3); white-space: pre-wrap; word-break: break-all;
+  background: var(--bg); border-radius: 6px; padding: 6px; max-height: 80px; overflow: auto; margin: 0;
+}
+
+/* ================================================================
    旅遊記帳 (yu-v3.55)
    ================================================================ */
 /* 總覽迷你卡片 */

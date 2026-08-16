@@ -62,6 +62,19 @@
   }
   const toast = (m) => (window.toast ? window.toast(m) : alert(m));
 
+  /* v3.57 — iOS 相容：將 PKCE verifier/provider 編碼進 OAuth state 參數，
+     使授權跳轉回來時即使 localStorage 因 iOS 上下文切換而遺失，仍能完成 token 交換。 */
+  function b64enc(str) { return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+  function b64dec(str) { str = str.replace(/-/g, '+').replace(/_/g, '/'); while (str.length % 4) str += '='; return atob(str); }
+  function encodeOAuthState(provider, verifier, stateKey) {
+    return b64enc(JSON.stringify({ k: stateKey, v: verifier, p: provider }));
+  }
+  function decodeOAuthState(state) {
+    try { const o = JSON.parse(b64dec(state)); if (o && o.v && o.p) return o; } catch (e) {}
+    return null;
+  }
+  function escHtml(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
   /* ---------- 狀態 ---------- */
   let state = loadState();
   function loadState() {
@@ -75,6 +88,7 @@
 
   /* ---------- OAuth 流程 ---------- */
   async function connect() {
+    clearOAuthFallback();
     const provider = $('#cloudProvider').value;
     const clientId = $('#cloudClientId').value.trim();
     // #3 修復：clientSecret 不寫入主雲端狀態（STORE）；
@@ -101,7 +115,8 @@
       response_type: 'code',
       code_challenge: challenge,
       code_challenge_method: 'S256',
-      state: stateKey,
+      // v3.57：verifier/provider 隨 state 往返（Google 原樣回傳），iOS 上下文切換後仍可不依賴 localStorage 完成交換
+      state: encodeOAuthState(provider, verifier, stateKey),
     });
     if (p.scope) params.set('scope', p.scope);
     if (p.extraAuth) p.extraAuth.split('&').forEach(kv => { const [k, v] = kv.split('='); params.set(k, v); });
@@ -128,37 +143,92 @@
     if (!code) return false;
     if (err) { const m = '授權失敗：' + err; setStatus(m); toast(m); if (stateKey) localStorage.removeItem('bk_oauth_' + stateKey); cleanup(); return true; }
 
+    // v3.57：優先從 localStorage 取（同瀏覽上下文）；否則從 state 解碼（iOS 上下文切換後仍可用）
+    let info = null;
     const raw = localStorage.getItem('bk_oauth_' + stateKey);
     if (raw) {
-      // 與發起 OAuth 同一瀏覽上下文（桌面 / 手機瀏覽器 / iPhone Safari）：
-      // 直接在此完成 token 交換，token 會存進當前頁面的 localStorage。
-      const { provider, verifier } = JSON.parse(raw);
-      localStorage.removeItem('bk_oauth_' + stateKey);
+      try { info = JSON.parse(raw); } catch (e) { info = null; }
+    }
+    if (!info) {
+      const decoded = decodeOAuthState(stateKey);
+      if (decoded) { info = { provider: decoded.p, verifier: decoded.v }; if (decoded.k) localStorage.removeItem('bk_oauth_' + decoded.k); }
+    }
+    if (info) {
+      const { provider, verifier } = info;
       // 清除網址列中的 code，避免重新整理重複交換
       history.replaceState({}, document.title, REDIRECT);
       try {
         const tok = await exchange(provider, code, verifier);
         applyToken(provider, tok);
+        clearOAuthFallback();
         toast('已連接 ' + PROVIDERS[provider].name);
       } catch (e) {
-        // v3.30：錯誤同時寫入雲端狀態區，確保 App 內 WebView 路徑下一定看得到（不依賴 alert/toast）。
+        // v3.57：自動交換失敗時顯示可手動補救的兜底面板（verifier 已隨 state 帶回，貼回重導網址即可重試）
         const m = '連接失敗：' + (e.message || e);
-        setStatus(m + '（請截圖回報）');
+        showOAuthFallback(code, m);
+        setStatus(m + '（請見下方手動補救步驟）');
         toast(m);
       }
       return true;
     }
 
-    // 不在同一瀏覽上下文（Android App 經由系統瀏覽器 / Chrome Custom Tabs 授權）：
-    // 此時 token 若在此交換只會存進「系統瀏覽器」的 localStorage，App 的 WebView 讀不到，
-    // 因此把授權碼經由自訂 scheme 回傳給 App 原生層，由原生層注入 BKOAuthBridge
-    // 在「App 的 WebView」內完成交換，token 才會正確存進 App。
-    const cb = 'billingtracker://oauth/callback?code=' + encodeURIComponent(code) +
-               '&state=' + encodeURIComponent(stateKey);
+    // 仍取不到授權資訊：Android 交給原生層經 billingtracker:// 回傳；純網頁/iOS 顯示兜底面板
+    if (window.BKNATIVE && typeof window.BKNATIVE.openOAuth === 'function') {
+      const cb = 'billingtracker://oauth/callback?code=' + encodeURIComponent(code) +
+                 '&state=' + encodeURIComponent(stateKey);
+      cleanup();
+      location.href = cb;
+      return true;
+    }
+    showOAuthFallback(code, '找不到授權資訊，請重新連接；或貼上 Google 重導回來的網址以手動補救。');
     cleanup();
-    location.href = cb;
     return true;
   }
+  function cleanup() { history.replaceState({}, document.title, REDIRECT); }
+
+  /* v3.57 — 授權自動流程失敗時的兜底 UI：
+     顯示授權碼供回報，並提供「貼回 Google 重導網址」手動完成連線（verifier 已隨 state 帶回，故可真正補救）。 */
+  function showOAuthFallback(code, msg) {
+    let box = document.getElementById('oauthFallback');
+    if (!box) {
+      box = document.createElement('div');
+      box.id = 'oauthFallback';
+      box.className = 'oauth-fallback';
+      const statusEl = document.getElementById('cloudStatus');
+      if (statusEl && statusEl.parentNode) statusEl.parentNode.insertBefore(box, statusEl.nextSibling);
+    }
+    box.innerHTML =
+      '<div class="of-title">⚠️ 自動授權未完成</div>' +
+      '<p class="of-msg"></p>' +
+      '<p class="of-hint">若你手上有 Google 重導回來的網址（含 <code>code</code> 與 <code>state</code>），貼到下方可手動完成連線：</p>' +
+      '<textarea id="ofUrl" class="of-textarea" placeholder="貼上 https://tk101012000.github.io/expense-tracker/?code=...&state=...&..."></textarea>' +
+      '<div class="of-actions"><button class="primary-btn small" id="ofRetry">手動完成連線</button>' +
+      '<button class="ghost-btn small" id="ofCopy">複製授權碼回報</button></div>' +
+      '<pre class="of-code"></pre>';
+    box.querySelector('.of-msg').textContent = msg;
+    box.querySelector('.of-code').textContent = code || '(無授權碼)';
+    const retry = box.querySelector('#ofRetry');
+    if (retry) retry.onclick = () => {
+      const val = (box.querySelector('#ofUrl').value || '').trim();
+      if (!val) { toast('請先貼上重導網址'); return; }
+      let u; try { u = new URL(val.includes('://') ? val : 'https://x/?' + val); } catch (e) { toast('網址格式無效'); return; }
+      const c = u.searchParams.get('code'), s = u.searchParams.get('state');
+      if (!c || !s) { toast('網址中找不到 code 或 state'); return; }
+      const dec = decodeOAuthState(s);
+      if (!dec || !dec.v) { toast('state 無法解析（可能非本 App 產生）'); return; }
+      (async () => {
+        try { const tok = await exchange(dec.p, c, dec.v); applyToken(dec.p, tok); clearOAuthFallback(); toast('已連接 ' + PROVIDERS[dec.p].name); }
+        catch (e) { toast('連線失敗：' + (e.message || e)); }
+      })();
+    };
+    const copy = box.querySelector('#ofCopy');
+    if (copy) copy.onclick = () => {
+      const txt = code || '';
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(() => toast('已複製授權碼'), () => toast('授權碼：' + txt));
+      else toast('授權碼：' + txt);
+    };
+  }
+  function clearOAuthFallback() { const b = document.getElementById('oauthFallback'); if (b) b.remove(); }
   function cleanup() { history.replaceState({}, document.title, REDIRECT); }
 
   async function exchange(provider, code, verifier) {
@@ -371,19 +441,26 @@
       setStatus(m); toast(m); cleanup(); return;
     }
     // 優先用原生層經 billingtracker:// 回傳時附帶的 verifier/provider（不依賴 WebView 儲存，
-    // 即使回傳過程中 WebView 被重建也能完成 token 交換）。若原生未提供，退回 localStorage 中的 PKCE 暫存。
+    // 即使回傳過程中 WebView 被重建也能完成 token 交換）。若原生未提供，退回 localStorage 中的 PKCE 暫存；
+    // v3.57：再不行則從 state 解碼（iOS / 原生回傳缺失時的最後補救）。
     if (!verifier || !provider) {
       const raw = localStorage.getItem('bk_oauth_' + stateKey);
-      if (!raw) { const m = '找不到授權資訊，請重新連接'; setStatus(m); alert(m); cleanup(); return; }
-      const o = JSON.parse(raw);
-      verifier = o.verifier; provider = o.provider;
-      localStorage.removeItem('bk_oauth_' + stateKey);   // #7：用完清除 PKCE 暫存
+      if (raw) {
+        const o = JSON.parse(raw);
+        verifier = o.verifier; provider = o.provider;
+        localStorage.removeItem('bk_oauth_' + stateKey);   // #7：用完清除 PKCE 暫存
+      } else {
+        const d = decodeOAuthState(stateKey);
+        if (!d || !d.v || !d.p) { const m = '找不到授權資訊，請重新連接'; setStatus(m); alert(m); cleanup(); return; }
+        verifier = d.v; provider = d.p; if (d.k) localStorage.removeItem('bk_oauth_' + d.k);
+      }
     }
     try {
       nativeLog('exchange start provider=' + provider);
       const tok = await exchange(provider, code, verifier);
       nativeLog('exchange ok access_token=' + (!!tok && !!tok.access_token));
       applyToken(provider, tok);
+      clearOAuthFallback();
       const m = '已連接 ' + PROVIDERS[provider].name;
       setStatus(m); toast(m);
     } catch (e) {
