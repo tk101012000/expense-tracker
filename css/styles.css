@@ -155,7 +155,7 @@ body {
 }
 .chip-btn.active { background: var(--primary-soft); color: var(--primary); border-color: var(--primary); }
 .filter-panel { background: var(--surface); border-radius: var(--radius); padding: 14px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 10px; }
-.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: start; }
 .field-toggle { display: flex; align-items: center; justify-content: space-between; cursor: pointer; }
 .field-toggle input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--primary); cursor: pointer; }
 .filter-panel label { font-size: 12px; color: var(--text-2); display: flex; flex-direction: column; gap: 4px; }
@@ -364,7 +364,7 @@ body {
 .modal-head .icon-btn { background: var(--surface-2); color: var(--text); }
 .modal-body { padding: 18px; display: flex; flex-direction: column; gap: 14px; }
 .field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--text-2); font-weight: 600; }
-.field input, .field select { padding: 12px; border: 1px solid var(--border); border-radius: 12px; font-size: 16px; background: var(--surface); color: var(--text); }
+.field input, .field select { padding: 12px; border: 1px solid var(--border); border-radius: 12px; font-size: 16px; background: var(--surface); color: var(--text); box-sizing: border-box; min-height: 46px; margin: 0; }
 .field input:focus, .field select:focus { outline: none; border-color: var(--primary); }
 .field textarea { padding: 12px; border: 1px solid var(--border); border-radius: 12px; font-size: 14px; background: var(--surface); color: var(--text); resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .field textarea:focus { outline: none; border-color: var(--primary); }
