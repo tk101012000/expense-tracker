@@ -14,7 +14,7 @@
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="css/styles.css?v=yu-v3.60" />
+  <link rel="stylesheet" href="css/styles.css?v=yu-v3.61" />
   <!-- OAuth 回傳橋接：本頁若在「系統瀏覽器 / Chrome Custom Tabs」（非 App 內 WebView）載入，
        且網址帶 ?code=（Google 授權回傳），則改以自訂 scheme 把 code/state 回傳給 Android App，
        避開嵌入 WebView 的 disallowed_useragent。桌面瀏覽器（非 Android）不攔截，照常走 handleRedirect。 -->
@@ -137,6 +137,7 @@
           <button class="chip-btn" id="toggleFilters">篩選 ▾</button>
           <button class="chip-btn" id="selRecordsBtn">☑ 選擇</button>
         </div>
+        <button class="scan-entry-btn" id="scanTxnBtn">📷 掃描電子支付畫面記帳</button>
         <div class="filter-panel" id="filterPanel" hidden>
           <div class="field-row">
             <label>起始日<input type="date" id="filterFrom" /></label>
@@ -819,10 +820,47 @@
     </div>
   </div>
 
+  <!-- ============ 掃描記帳彈窗（電子支付畫面 OCR） ============ -->
+  <input type="file" id="scanImageInput" accept="image/*" hidden />
+  <div class="modal" id="scanModal" hidden>
+    <div class="modal-card scan-card">
+      <div class="modal-head">
+        <h3>掃描記帳</h3>
+        <button class="icon-btn" data-close="scanModal" title="關閉">✕</button>
+      </div>
+      <div class="modal-body">
+        <img id="scanPreview" class="scan-preview" alt="預覽" />
+        <div id="scanLoading" class="scan-loading">
+          <div class="progress"><div id="scanProgress" class="progress-bar"></div></div>
+          <p id="scanStatus" class="scan-status">準備中…</p>
+        </div>
+        <div id="scanResult" class="scan-result" hidden>
+          <label class="field">金額
+            <input type="number" id="scanAmount" step="0.01" min="0" inputmode="decimal" placeholder="0.00" />
+          </label>
+          <label class="field">日期
+            <input type="date" id="scanDate" />
+          </label>
+          <label class="field">店家 / 備註
+            <input type="text" id="scanNote" maxlength="60" placeholder="可手動修正" />
+          </label>
+          <details class="scan-details">
+            <summary>原始辨識文字（供核對）</summary>
+            <textarea id="scanRaw" readonly rows="4"></textarea>
+          </details>
+          <div class="modal-actions">
+            <button class="ghost-btn" id="scanRetryBtn" type="button">重新選擇</button>
+            <button class="primary-btn" id="scanApplyBtn" type="button">套用並記帳</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast -->
   <div id="toast" class="toast" hidden></div>
 
   <script src="js/cloud.yu-v3.57.js?v=yu-v3.57"></script>
-  <script src="js/app.yu-v3.60.js?v=yu-v3.60"></script>
+  <script src="js/app.yu-v3.61.js?v=yu-v3.61"></script>
 </body>
 </html>
