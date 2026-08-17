@@ -840,7 +840,7 @@ body[data-theme="dark"] .skeleton::after { background: linear-gradient(90deg, tr
 /* ================================================================
    Tier 3D — 情境化刪除確認
    ================================================================ */
-#confirmModal { align-items: center; }
+#confirmModal { align-items: center; z-index: 70; }
 #confirmModal .modal-card { max-width: 380px; border-radius: 20px; }
 .confirm-msg { font-size: 14px; color: var(--text-2); line-height: 1.55; }
 .confirm-ctx { margin-top: 12px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
