@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#2563eb" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -14,7 +14,7 @@
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="css/styles.css?v=yu-v3.62" />
+  <link rel="stylesheet" href="css/styles.css?v=yu-v3.63" />
   <!-- OAuth 回傳橋接：本頁若在「系統瀏覽器 / Chrome Custom Tabs」（非 App 內 WebView）載入，
        且網址帶 ?code=（Google 授權回傳），則改以自訂 scheme 把 code/state 回傳給 Android App，
        避開嵌入 WebView 的 disallowed_useragent。桌面瀏覽器（非 Android）不攔截，照常走 handleRedirect。 -->
@@ -51,7 +51,7 @@
   <div id="app">
     <!-- iOS 加到主畫面引導（僅 iOS 且未獨立模式時顯示） -->
     <div class="ios-hint" id="iosHint" hidden>
-      <span class="ios-hint-close" id="iosHintClose" role="button" aria-label="關閉">✕</span>
+      <span class="ios-hint-close" id="iosHintClose" role="button" tabindex="0" aria-label="關閉">✕</span>
       <div class="ios-hint-icon">📲</div>
       <div class="ios-hint-body">
         <p class="ios-hint-title">把這個 App 加到主畫面</p>
@@ -68,7 +68,7 @@
           <p id="viewSub" class="topbar-sub">今日 <span id="todayStr"></span></p>
         </div>
       </div>
-      <button class="icon-btn" id="reminderBtn" title="提醒">
+      <button class="icon-btn" id="reminderBtn" title="提醒" aria-label="提醒事項">
         🔔<span class="badge" id="reminderBadge" hidden>0</span>
       </button>
       <button class="icon-btn" id="themeToggle" title="切換深色模式" aria-label="切換深色模式">🌙</button>
@@ -133,7 +133,7 @@
       <!-- ============ 記帳 ============ -->
       <section class="view" data-view="records" hidden>
         <div class="filter-bar">
-          <input type="search" id="searchKeyword" placeholder="🔍 搜尋備註 / 類別 / 金額" />
+          <input type="search" id="searchKeyword" placeholder="🔍 搜尋備註 / 類別 / 金額" aria-label="搜尋交易" />
           <button class="chip-btn" id="toggleFilters">篩選 ▾</button>
           <button class="chip-btn" id="selRecordsBtn">☑ 選擇</button>
         </div>
@@ -296,7 +296,7 @@
         </div>
         <div id="accountsList" class="account-list"></div>
         <button class="fab secondary" id="addAccountBtn">＋ 新增帳戶</button>
-        <div class="card" style="margin-top:16px">
+        <div class="card card-stack">
           <div class="card-head"><h2>成員（誰付錢）</h2></div>
           <div id="memberList" class="member-list"></div>
           <button class="fab secondary" id="addMemberBtn" style="margin-top:10px">＋ 新增成員</button>
@@ -316,7 +316,7 @@
             <div id="memberSplit" class="split-list"></div>
           </div>
         </div>
-        <div class="card" style="margin-top:16px">
+        <div class="card card-stack">
           <div class="card-head"><h2>📊 成員分擔統計</h2>
             <button class="ghost-btn small" id="contribExportBtn" type="button">匯出報表</button>
           </div>
@@ -340,7 +340,7 @@
           </div>
           <div class="contrib-detail" id="contribDetail"></div>
         </div>
-        <div class="card" style="margin-top:16px">
+        <div class="card card-stack">
           <div class="card-head"><h2>💸 每人應付（分擔結算）</h2>
             <button class="ghost-btn small" id="payExportBtn" type="button">匯出報表</button>
           </div>
@@ -358,12 +358,12 @@
           </div>
           <div id="paySettle" class="pay-list"></div>
         </div>
-        <div class="card" style="margin-top:16px">
+        <div class="card card-stack">
           <div class="card-head"><h2>🧮 分擔計算機</h2></div>
           <p class="hint-text" style="margin-top:0">輸入總金額與參與人員，立即算出品每人應付金額（平均分擔或自訂比例）。</p>
           <button class="ghost-btn" id="openSplitCalc" style="width:100%">開啟計算機</button>
         </div>
-        <div class="card" style="margin-top:16px">
+        <div class="card card-stack">
           <div class="card-head"><h2>資料管理</h2></div>
           <div class="data-actions">
             <button class="ghost-btn" id="exportCsvBtn">匯出 CSV</button>
@@ -381,7 +381,7 @@
           <p class="hint-text">所有資料僅儲存在本裝置瀏覽器（localStorage），不會上傳。</p>
         </div>
 
-        <div class="card" style="margin-top:16px">
+        <div class="card card-stack">
           <div class="card-head"><h2>☁️ 雲端備份</h2></div>
           <label class="field">雲端服務
             <select id="cloudProvider">
@@ -435,7 +435,7 @@
     <nav class="tabbar">
       <button class="tab active" data-view="dashboard"><span>🏠</span>總覽</button>
       <button class="tab" data-view="records"><span>📒</span>記帳</button>
-      <button class="tab fab-tab" id="fabAdd">＋</button>
+      <button class="tab fab-tab" id="fabAdd" aria-label="新增記帳">＋</button>
       <button class="tab" data-view="bills"><span>📅</span>繳費</button>
       <button class="tab" data-view="stats"><span>📊</span>統計</button>
       <button class="tab" data-view="accounts"><span>💳</span>帳戶</button>
@@ -483,18 +483,18 @@
             <button type="button" class="tt-btn" data-ttype="income">收入</button>
           </div>
           <label class="field">金額 <span class="req">*</span>
-            <input type="number" id="txnAmount" step="0.01" min="0" inputmode="decimal" placeholder="0.00" />
+            <input type="number" id="txnAmount" step="0.01" min="0" inputmode="decimal" placeholder="0.00" aria-required="true" />
             <small class="err" id="errAmount"></small>
           </label>
           <label class="field">日期 <span class="req">*</span>
-            <input type="date" id="txnDate" />
+            <input type="date" id="txnDate" aria-required="true" />
             <small class="err" id="errDate"></small>
           </label>
           <label class="field">類別 <span class="req">*</span>
-            <select id="txnCategory"></select>
+            <select id="txnCategory" aria-required="true"></select>
           </label>
           <label class="field">帳戶 <span class="req">*</span>
-            <select id="txnAccount"></select>
+            <select id="txnAccount" aria-required="true"></select>
           </label>
           <label class="field">幣別
             <select id="txnCurrency"></select>
@@ -547,11 +547,11 @@
         <div class="form-section">
           <div class="form-section-title">帳戶資料</div>
           <label class="field">帳戶名稱 <span class="req">*</span>
-            <input type="text" id="accName" maxlength="20" placeholder="例：中國信託" />
+            <input type="text" id="accName" maxlength="20" placeholder="例：中國信託" aria-required="true" />
             <small class="err" id="errAccName"></small>
           </label>
           <label class="field">類型 <span class="req">*</span>
-            <select id="accType">
+            <select id="accType" aria-required="true">
               <option value="cash">現金</option>
               <option value="bank">銀行</option>
               <option value="credit">信用卡</option>
@@ -583,11 +583,11 @@
         <div class="form-section">
           <div class="form-section-title">基本資料</div>
           <label class="field">項目名稱 <span class="req">*</span>
-            <input type="text" id="billName" maxlength="20" placeholder="例：台電電費" />
+            <input type="text" id="billName" maxlength="20" placeholder="例：台電電費" aria-required="true" />
             <small class="err" id="errBillName"></small>
           </label>
           <label class="field">金額 <span class="req">*</span>
-            <input type="number" id="billAmount" step="0.01" min="0" inputmode="decimal" placeholder="0.00" />
+            <input type="number" id="billAmount" step="0.01" min="0" inputmode="decimal" placeholder="0.00" aria-required="true" />
             <small class="err" id="errBillAmount"></small>
           </label>
           <label class="field">幣別
@@ -667,7 +667,7 @@
       </div>
       <form id="memberForm" class="modal-body">
         <label class="field">成員名稱 <span class="req">*</span>
-          <input type="text" id="memberName" maxlength="20" placeholder="例：本人、配偶、小孩" />
+          <input type="text" id="memberName" maxlength="20" placeholder="例：本人、配偶、小孩" aria-required="true" />
           <small class="err" id="errMemberName"></small>
         </label>
         <div class="modal-actions">
@@ -689,7 +689,7 @@
         <div class="form-section">
           <div class="form-section-title">基本資料</div>
           <label class="field">旅程名稱 <span class="req">*</span>
-            <input type="text" id="tripName" maxlength="20" placeholder="例：東京 5 日遊" />
+            <input type="text" id="tripName" maxlength="20" placeholder="例：東京 5 日遊" aria-required="true" />
             <small class="err" id="errTripName"></small>
           </label>
           <label class="field">目的地
@@ -738,7 +738,7 @@
         <div class="form-section">
           <div class="field-row">
             <label class="field">金額 <span class="req">*</span>
-              <input type="number" id="tripTxnAmount" step="0.01" min="0" inputmode="decimal" placeholder="0.00" />
+              <input type="number" id="tripTxnAmount" step="0.01" min="0" inputmode="decimal" placeholder="0.00" aria-required="true" />
             </label>
             <label class="field">幣別
               <select id="tripTxnCurrency"></select>
@@ -746,11 +746,11 @@
           </div>
           <small class="err" id="errTripTxnAmount"></small>
           <label class="field">日期 <span class="req">*</span>
-            <input type="date" id="tripTxnDate" />
+            <input type="date" id="tripTxnDate" aria-required="true" />
           </label>
           <small class="err" id="errTripTxnDate"></small>
           <label class="field">類別
-            <select id="tripTxnCategory"></select>
+            <select id="tripTxnCategory" aria-required="true"></select>
           </label>
           <label class="field">付款人（誰付錢）
             <select id="tripTxnPaidBy"><option value="">未指定</option></select>
@@ -782,7 +782,7 @@
       </div>
       <div class="modal-body">
         <label class="field">總金額 <span class="req">*</span>
-          <input type="number" id="splitTotal" step="0.01" min="0" inputmode="decimal" placeholder="0.00" />
+          <input type="number" id="splitTotal" step="0.01" min="0" inputmode="decimal" placeholder="0.00" aria-required="true" />
           <small class="err" id="errSplitTotal"></small>
         </label>
         <div class="seg-tabs" id="splitModeTabs">
@@ -858,9 +858,10 @@
   </div>
 
   <!-- Toast -->
-  <div id="toast" class="toast" hidden></div>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <div id="srStatus" class="sr-only" role="status" aria-live="polite"></div>
 
   <script src="js/cloud.yu-v3.57.js?v=yu-v3.57"></script>
-  <script src="js/app.yu-v3.62.js?v=yu-v3.62"></script>
+  <script src="js/app.yu-v3.63.js?v=yu-v3.63"></script>
 </body>
 </html>
