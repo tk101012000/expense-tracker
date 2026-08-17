@@ -501,9 +501,6 @@
           <label class="field">付款人（誰付錢）
             <select id="txnPaidBy"><option value="">未指定</option></select>
           </label>
-          <label class="field">所屬旅程
-            <select id="txnTrip"><option value="">無（一般記帳）</option></select>
-          </label>
         </div>
         <div class="form-section" id="txnSplitWrap">
           <div class="form-section-title">多人分擔</div>
@@ -729,6 +726,52 @@
     </div>
   </div>
 
+  <!-- ============ 旅程內花費彈窗（獨立帳本，不進主記帳） ============ -->
+  <div class="modal" id="tripTxnModal" hidden>
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3 id="tripTxnModalTitle">新增花費</h3>
+        <button class="icon-btn" type="button" data-close>✕</button>
+      </div>
+      <form id="tripTxnForm" class="modal-body groups">
+        <div class="form-section">
+          <div class="field-row">
+            <label class="field">金額 <span class="req">*</span>
+              <input type="number" id="tripTxnAmount" step="0.01" min="0" inputmode="decimal" placeholder="0.00" />
+            </label>
+            <label class="field">幣別
+              <select id="tripTxnCurrency"></select>
+            </label>
+          </div>
+          <small class="err" id="errTripTxnAmount"></small>
+          <label class="field">日期 <span class="req">*</span>
+            <input type="date" id="tripTxnDate" />
+          </label>
+          <small class="err" id="errTripTxnDate"></small>
+          <label class="field">類別
+            <select id="tripTxnCategory"></select>
+          </label>
+          <label class="field">付款人（誰付錢）
+            <select id="tripTxnPaidBy"><option value="">未指定</option></select>
+          </label>
+          <label class="field">分擔方式
+            <select id="tripTxnSplit">
+              <option value="none">不分擔（付款人全額）</option>
+              <option value="equal">全體團員均分</option>
+            </select>
+          </label>
+          <label class="field">備註
+            <input type="text" id="tripTxnNote" maxlength="40" placeholder="選填" />
+          </label>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="ghost-btn" id="deleteTripTxnBtn" hidden>刪除</button>
+          <button type="submit" class="primary-btn">儲存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- ============ 分擔計算機彈窗 ============ -->
   <div class="modal" id="splitCalcModal" hidden>
     <div class="modal-card">
@@ -780,6 +823,6 @@
   <div id="toast" class="toast" hidden></div>
 
   <script src="js/cloud.yu-v3.57.js?v=yu-v3.57"></script>
-  <script src="js/app.yu-v3.57.js?v=yu-v3.57"></script>
+  <script src="js/app.yu-v3.58.js?v=yu-v3.58"></script>
 </body>
 </html>
