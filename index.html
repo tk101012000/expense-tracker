@@ -14,7 +14,7 @@
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="css/styles.css?v=yu-v3.63" />
+  <link rel="stylesheet" href="css/styles.css?v=yu-v3.64" />
   <!-- OAuth 回傳橋接：本頁若在「系統瀏覽器 / Chrome Custom Tabs」（非 App 內 WebView）載入，
        且網址帶 ?code=（Google 授權回傳），則改以自訂 scheme 把 code/state 回傳給 Android App，
        避開嵌入 WebView 的 disallowed_useragent。桌面瀏覽器（非 Android）不攔截，照常走 handleRedirect。 -->
@@ -737,31 +737,38 @@
       <form id="tripTxnForm" class="modal-body groups">
         <div class="form-section">
           <div class="field-row">
-            <label class="field">金額 <span class="req">*</span>
+            <label class="field">
+              <span class="field-label">金額 <span class="req">*</span></span>
               <input type="number" id="tripTxnAmount" step="0.01" min="0" inputmode="decimal" placeholder="0.00" aria-required="true" />
             </label>
-            <label class="field">幣別
+            <label class="field">
+              <span class="field-label">幣別</span>
               <select id="tripTxnCurrency"></select>
             </label>
           </div>
           <small class="err" id="errTripTxnAmount"></small>
-          <label class="field">日期 <span class="req">*</span>
+          <label class="field">
+            <span class="field-label">日期 <span class="req">*</span></span>
             <input type="date" id="tripTxnDate" aria-required="true" />
           </label>
           <small class="err" id="errTripTxnDate"></small>
-          <label class="field">類別
+          <label class="field">
+            <span class="field-label">類別</span>
             <select id="tripTxnCategory" aria-required="true"></select>
           </label>
-          <label class="field">付款人（誰付錢）
+          <label class="field">
+            <span class="field-label">付款人（誰付錢）</span>
             <select id="tripTxnPaidBy"><option value="">未指定</option></select>
           </label>
-          <label class="field">分擔方式
+          <label class="field">
+            <span class="field-label">分擔方式</span>
             <select id="tripTxnSplit">
               <option value="none">不分擔（付款人全額）</option>
               <option value="equal">全體團員均分</option>
             </select>
           </label>
-          <label class="field">備註
+          <label class="field">
+            <span class="field-label">備註</span>
             <input type="text" id="tripTxnNote" maxlength="40" placeholder="選填" />
           </label>
         </div>
@@ -862,6 +869,6 @@
   <div id="srStatus" class="sr-only" role="status" aria-live="polite"></div>
 
   <script src="js/cloud.yu-v3.57.js?v=yu-v3.57"></script>
-  <script src="js/app.yu-v3.63.js?v=yu-v3.63"></script>
+  <script src="js/app.yu-v3.64.js?v=yu-v3.64"></script>
 </body>
 </html>

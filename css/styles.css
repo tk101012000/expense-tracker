@@ -364,6 +364,7 @@ body {
 .modal-head .icon-btn { background: var(--surface-2); color: var(--text); }
 .modal-body { padding: 18px; display: flex; flex-direction: column; gap: 14px; }
 .field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--text-2); font-weight: 600; line-height: 1.25; }
+.field-label { display: block; }
 .field input, .field select { padding: 12px; border: 1px solid var(--border); border-radius: 12px; font-size: 16px; background: var(--surface); color: var(--text); box-sizing: border-box; min-height: 46px; height: 46px; margin: 0; }
 .field input:focus, .field select:focus { outline: none; border-color: var(--primary); }
 .field textarea { padding: 12px; border: 1px solid var(--border); border-radius: 12px; font-size: 14px; background: var(--surface); color: var(--text); resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
