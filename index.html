@@ -10,11 +10,11 @@
   <title>繳費記帳 · 家庭理財助手</title>
   <!-- #17 修復：Content-Security-Policy 限制資源來源，減少 XSS 攻擊面 -->
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://accounts.google.com https://oauth2.googleapis.com https://api.dropboxapi.com https://content.dropboxapi.com https://www.googleapis.com; img-src 'self' data: blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" />
+        content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline'; connect-src 'self' https://cdn.jsdelivr.net https://accounts.google.com https://oauth2.googleapis.com https://api.dropboxapi.com https://content.dropboxapi.com https://www.googleapis.com; img-src 'self' data: blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" />
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="css/styles.css?v=yu-v3.73" />
+  <link rel="stylesheet" href="css/styles.css?v=yu-v3.75" />
   <!-- OAuth 回傳橋接：本頁若在「系統瀏覽器 / Chrome Custom Tabs」（非 App 內 WebView）載入，
        且網址帶 ?code=（Google 授權回傳），則改以自訂 scheme 把 code/state 回傳給 Android App，
        避開嵌入 WebView 的 disallowed_useragent。桌面瀏覽器（非 Android）不攔截，照常走 handleRedirect。 -->
@@ -138,6 +138,7 @@
           <button class="chip-btn" id="selRecordsBtn">☑ 選擇</button>
         </div>
         <button class="scan-entry-btn" id="scanTxnBtn">📷 掃描電子支付畫面記帳</button>
+        <button class="scan-entry-btn capture-btn" id="captureScreenBtn">📺 即時擷取螢幕金額</button>
         <div class="filter-panel" id="filterPanel" hidden>
           <div class="field-row">
             <label>起始日<input type="date" id="filterFrom" /></label>
@@ -876,6 +877,6 @@
   <div id="srStatus" class="sr-only" role="status" aria-live="polite"></div>
 
   <script src="js/cloud.yu-v3.70.js?v=yu-v3.70"></script>
-  <script src="js/app.yu-v3.73.js?v=yu-v3.73"></script>
+  <script src="js/app.yu-v3.75.js?v=yu-v3.75"></script>
 </body>
 </html>

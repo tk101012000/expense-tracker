@@ -4,7 +4,7 @@ const ASSETS = [
   './',
   './index.html',
   './css/styles.css',
-  './js/app.yu-v3.73.js',
+  './js/app.yu-v3.75.js',
   './js/cloud.yu-v3.70.js',
   './manifest.json',
   './icons/icon-192.png',

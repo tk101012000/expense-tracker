@@ -958,6 +958,19 @@ body[data-theme="dark"] .skeleton::after { background: linear-gradient(90deg, tr
   display: flex; align-items: center; justify-content: center; gap: 8px;
 }
 .scan-entry-btn:active { transform: scale(.98); }
+/* ============ 即時擷取螢幕（v3.75） ============ */
+.capture-btn { background: linear-gradient(135deg, #7c3aed, #4f46e5); }
+.capture-btn.capturing {
+  background: linear-gradient(135deg, #dc2626, #b91c1c);
+  animation: capturePulse 1.4s ease-in-out infinite;
+}
+@keyframes capturePulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, .45); }
+  50% { box-shadow: 0 0 0 8px rgba(220, 38, 38, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .capture-btn.capturing { animation: none; }
+}
 .scan-card { max-width: 480px; }
 .scan-preview { width: 100%; max-height: 38vh; object-fit: contain; border-radius: 14px; background: var(--surface-2); margin-bottom: 12px; }
 .scan-loading { display: flex; flex-direction: column; gap: 10px; padding: 8px 0; }
