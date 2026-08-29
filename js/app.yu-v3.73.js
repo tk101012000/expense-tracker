@@ -110,7 +110,7 @@ const CHART_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#f59e0b', '#8b5cf6', '#0
 function cssVar(name, fallback) { const v = getComputedStyle(document.body).getPropertyValue(name); return v ? v.trim() : (fallback || ''); }
 
 /* ---------- 版本資訊 ---------- */
-const APP_VERSION = 'yu-v3.72';
+const APP_VERSION = 'yu-v3.73';
 const APP_BUILD_DATE = '2026-08-29';
 // 暴露給原生 APP（TWA）讀取，使頁尾版本號隨網頁自動更新
 window.APP_VERSION = APP_VERSION;
@@ -3422,6 +3422,30 @@ function bindTripsEvents() {
   if (ttDel) ttDel.addEventListener('click', () => { if (editTripTxnId) deleteTripTxn(editTripTxnTripId, editTripTxnId); });
 }
 
+// v3.73：付款通知深連結 quickadd 處理（由原生 NotificationListenerService 經 billingtracker://quickadd 喚醒）
+// 讀取 location.search 的 amount/note/cat/date/cur，預填「新增交易」彈窗，並清理網址列避免重複跳出。
+function handleQuickAdd() {
+  try {
+    const p = new URLSearchParams(location.search);
+    if (p.get('quickadd') !== '1') return;
+    try { history.replaceState(null, '', location.pathname + (location.hash || '')); } catch (_) {}
+    const amount = (p.get('amount') || '').trim().replace(/,/g, '');
+    const note = (p.get('note') || '').trim();
+    const cat = (p.get('cat') || '').trim();
+    const date = (p.get('date') || '').trim();
+    const cur = (p.get('cur') || '').trim();
+    openTxnModal(); // 開新支出交易
+    if (amount) $('#txnAmount').value = amount;
+    if (note) $('#txnNote').value = note;
+    if (date) $('#txnDate').value = date;
+    if (cat) { fillCategorySelect($('#txnCategory'), 'expense', cat); $('#txnCategory').value = cat; }
+    if (cur) fillCurrencySelect($('#txnCurrency'), cur);
+    toast('已從付款通知帶入，請確認後儲存');
+  } catch (e) {
+    console.error('handleQuickAdd', e);
+  }
+}
+
 function init() {
   applyTheme(getStoredTheme());   // Tier 3A：套用主題（初次依系統偏好）
   load();
@@ -3466,6 +3490,8 @@ function init() {
     const next = document.body.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
     applyTheme(next); localStorage.setItem('theme', next);
   });
+  // v3.73：付款通知深連結自動帶入（billingtracker://quickadd）
+  handleQuickAdd();
 }
 document.addEventListener('DOMContentLoaded', init);
 
