@@ -951,7 +951,7 @@ body[data-theme="dark"] .skeleton::after { background: linear-gradient(90deg, tr
 
 /* ============ 掃描記帳（v3.61） ============ */
 .scan-entry-btn {
-  margin: 10px 14px 4px; width: calc(100% - 28px);
+  margin: 10px 0 4px; width: 100%;
   background: linear-gradient(135deg, var(--primary), var(--primary-dark));
   color: #fff; border: none; border-radius: 14px; padding: 13px 16px;
   font-size: 15px; font-weight: 700; cursor: pointer; box-shadow: var(--shadow-xs);

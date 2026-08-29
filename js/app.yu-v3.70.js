@@ -110,8 +110,8 @@ const CHART_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#f59e0b', '#8b5cf6', '#0
 function cssVar(name, fallback) { const v = getComputedStyle(document.body).getPropertyValue(name); return v ? v.trim() : (fallback || ''); }
 
 /* ---------- 版本資訊 ---------- */
-const APP_VERSION = 'yu-v3.58';
-const APP_BUILD_DATE = '2026-08-17';
+const APP_VERSION = 'yu-v3.70';
+const APP_BUILD_DATE = '2026-08-29';
 // 暴露給原生 APP（TWA）讀取，使頁尾版本號隨網頁自動更新
 window.APP_VERSION = APP_VERSION;
 window.APP_BUILD_DATE = APP_BUILD_DATE;
@@ -220,10 +220,17 @@ function maybeShowIosHint() {
   if (!isIOSDevice() || isStandalone()) { box.hidden = true; return; }
   try { if (localStorage.getItem(IOS_HINT_KEY) === '1') { box.hidden = true; return; } } catch (_) { /* ignore */ }
   box.hidden = false;
-  if (close) close.addEventListener('click', () => {
-    box.hidden = true;
-    try { localStorage.setItem(IOS_HINT_KEY, '1'); } catch (_) { /* ignore */ }
-  });
+  if (close) {
+    const closeHint = () => {
+      box.hidden = true;
+      try { localStorage.setItem(IOS_HINT_KEY, '1'); } catch (_) { /* ignore */ }
+    };
+    close.addEventListener('click', closeHint);
+    // #4 修復：role=button 補鍵盤觸發（Enter / Space）
+    close.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); closeHint(); }
+    });
+  }
 }
 // #8 修復：save() 回傳 boolean，讓呼叫方能判斷是否成功
 function save() {
@@ -278,6 +285,9 @@ function switchView(v) {
   $$('.tab[data-view]').forEach(t => t.classList.toggle('active', t.dataset.view === v));
   $('#viewTitle').textContent = VIEW_TITLE[v] || '';
   $('#viewSub').style.display = v === 'dashboard' ? '' : 'none';
+  // #15 修復：切換頁面時用 live region 播報，螢幕閱讀器使用者能察覺內容更新
+  const sr = $('#srStatus');
+  if (sr) sr.textContent = '已切換至' + (VIEW_TITLE[v] || '頁面');
   if (v === 'records' || v === 'bills' || v === 'accounts') {
     // Tier 3C：切到清單型頁面先顯示骨架，再於下一幀填入真實資料
     showSkeleton(v);
@@ -412,7 +422,7 @@ function txnRowHtml(t) {
   const sp = splitText(t);
   const sel = selMode && selType === 'txn';
   const checked = sel && selSet.has(t.id);
-  return `<div class="txn-item ${sel ? 'selectable' : ''} ${checked ? 'selected' : ''}" data-txn="${t.id}">
+  return `<div class="txn-item ${sel ? 'selectable' : ''} ${checked ? 'selected' : ''}" data-txn="${t.id}" tabindex="0" role="button" aria-label="編輯 ${escapeHtml(t.category)} ${fmtMoneyCur(t.amount, t.currency || '')}">
     ${sel ? `<span class="sel-check ${checked ? 'on' : ''}"></span>` : ''}
     <div class="txn-icon">${icon}</div>
     <div class="txn-main">
@@ -520,11 +530,13 @@ function renderBills() {
       : `<span class="muted-pill">${b.status === 'inactive' ? '非本月' : '未設週期'}</span>`;
     const sel = selMode && selType === 'bill';
     const checked = sel && selSet.has(b.id);
-    return `<div class="bill-item ${cls} ${sel ? 'selectable' : ''} ${checked ? 'selected' : ''}" data-billedit="${b.id}">
+    // #11 修復：逾期/即將到期除左邊框顏色外，補圖標，不只靠顏色傳達狀態
+    const statusIcon = b.status === 'overdue' ? '⚠️ ' : b.status === 'soon' ? '⏰ ' : '';
+    return `<div class="bill-item ${cls} ${sel ? 'selectable' : ''} ${checked ? 'selected' : ''}" data-billedit="${b.id}" tabindex="0" aria-label="編輯 ${escapeHtml(b.name)}">
       ${sel ? `<span class="sel-check ${checked ? 'on' : ''}"></span>` : ''}
       <div class="txn-icon">${CAT_ICON[b.category] || '📄'}</div>
       <div class="bill-main">
-        <div class="bill-name">${escapeHtml(b.name)}</div>
+        <div class="bill-name">${statusIcon}${escapeHtml(b.name)}</div>
         <div class="bill-sub">${b.cycle ? cycleTxt[b.cycle] : '未設定期'} · ${subDue} · ${acc ? escapeHtml(acc.name) : (b.accountId ? '' : '未指定帳戶')}</div>
         ${splitText(b) ? `<div class="bill-sub" style="color:var(--text-3);margin-top:3px">分擔：${escapeHtml(splitText(b))}</div>` : ''}
         <div style="margin-top:6px">${tag}</div>
@@ -984,7 +996,7 @@ function renderAccounts() {
     const bal = accountBalance(a.id);  // 使用快取版本
     const meta = ACCOUNT_META[a.type];
     const count = DB.txns.filter(t => t.accountId === a.id).length;
-    return `<div class="account-item" data-accedit="${a.id}">
+    return `<div class="account-item" data-accedit="${a.id}" tabindex="0" role="button" aria-label="編輯 ${escapeHtml(a.name)}">
       <div class="account-top">
         <div class="account-type">
           <div class="account-icon">${meta.icon}</div>
@@ -1303,7 +1315,29 @@ function setTxnType(type) {
   const wrap = $('#txnSplitWrap');
   if (wrap) wrap.style.display = (type === 'expense') ? '' : 'none';
 }
-function clearErr(ids) { ids.forEach(i => ($('#' + i).textContent = '')); }
+// 錯誤欄位 ↔ 輸入框 對應表（供 aria-invalid / aria-describedby 關聯）
+const ERR_INPUT = {
+  errAmount: 'txnAmount', errDate: 'txnDate',
+  errAccName: 'accName',
+  errBillName: 'billName', errBillAmount: 'billAmount', errBillDue: 'billDue',
+  errMemberName: 'memberName',
+  errTripName: 'tripName',
+  errTripTxnAmount: 'tripTxnAmount', errTripTxnDate: 'tripTxnDate',
+  errSplitTotal: 'splitTotal',
+};
+function setErr(id, msg) {
+  const el = $('#' + id); if (el) el.textContent = msg;
+  const inp = ERR_INPUT[id] && $('#' + ERR_INPUT[id]);
+  if (inp) { inp.setAttribute('aria-invalid', 'true'); inp.setAttribute('aria-describedby', id); }
+}
+// #7 修復：清除錯誤時一併清除 aria-invalid / aria-describedby
+function clearErr(ids) {
+  ids.forEach(i => {
+    const el = $('#' + i); if (el) el.textContent = '';
+    const inp = ERR_INPUT[i] && $('#' + ERR_INPUT[i]);
+    if (inp) { inp.removeAttribute('aria-invalid'); inp.removeAttribute('aria-describedby'); }
+  });
+}
 
 function saveTxn(e) {
   e.preventDefault();
@@ -1313,8 +1347,8 @@ function saveTxn(e) {
   let paidBy = $('#txnPaidBy').value;
   if (paidBy === '__new') { openMemberModal(); return; } // 先新增成員，稍後再存
   let ok = true;
-  if (!(amount > 0)) { $('#errAmount').textContent = '請輸入大於 0 的金額'; ok = false; }
-  if (!date) { $('#errDate').textContent = '請選擇日期'; ok = false; }
+  if (!(amount > 0)) { setErr('errAmount', '請輸入大於 0 的金額'); ok = false; }
+  if (!date) { setErr('errDate', '請選擇日期'); ok = false; }
   if (!DB.accounts.length) { toast('請先新增帳戶'); ok = false; }
   if (!ok) return;
   const payload = {
@@ -1362,7 +1396,7 @@ function openAccountModal(id) {
   editAccId = id || null;
   $('#accountModalTitle').textContent = id ? '編輯帳戶' : '新增帳戶';
   $('#deleteAccBtn').hidden = !id;
-  $('#errAccName').textContent = '';
+  clearErr(['errAccName']);
   if (id) {
     // #7 修復：find 守衛
     const a = DB.accounts.find(x => x.id === id);
@@ -1378,7 +1412,7 @@ function openAccountModal(id) {
 function saveAccount(e) {
   e.preventDefault();
   const name = $('#accName').value.trim();
-  if (!name) { $('#errAccName').textContent = '請輸入帳戶名稱'; return; }
+  if (!name) { setErr('errAccName', '請輸入帳戶名稱'); return; }
   const payload = { name, type: $('#accType').value, balance: parseFloat($('#accBalance').value) || 0, note: $('#accNote').value.trim() };
   if (editAccId) {
     // #7 修復：find 守衛
@@ -1429,7 +1463,7 @@ function openMemberModal(id) {
   memberReturnToTxn = !id && txnModal && !txnModal.hidden;
   $('#memberModalTitle').textContent = id ? '編輯成員' : '新增成員';
   $('#deleteMemberBtn').hidden = !id;
-  $('#errMemberName').textContent = '';
+  clearErr(['errMemberName']);
   $('#memberName').value = id ? ((DB.members.find(x => x.id === id) || {}).name || '') : '';
   $('#memberModal').hidden = false;
   setTimeout(() => $('#memberName').focus(), 50);
@@ -1437,7 +1471,7 @@ function openMemberModal(id) {
 function saveMember(e) {
   e.preventDefault();
   const name = $('#memberName').value.trim();
-  if (!name) { $('#errMemberName').textContent = '請輸入成員名稱'; return; }
+  if (!name) { setErr('errMemberName', '請輸入成員名稱'); return; }
   let newId = null;
   if (editMemberId) {
     const m = DB.members.find(x => x.id === editMemberId);
@@ -1488,7 +1522,7 @@ function renderMembers() {
   el.innerHTML = DB.members.length
     ? DB.members.map(m => {
         const count = DB.txns.filter(t => t.paidBy === m.id).length;
-        return `<div class="member-item" data-memberedit="${m.id}">
+        return `<div class="member-item" data-memberedit="${m.id}" tabindex="0" role="button" aria-label="編輯 ${escapeHtml(m.name)}">
           <span class="member-name">${escapeHtml(m.name)}</span>
           <span class="member-count">${count} 筆</span>
         </div>`;
@@ -1644,7 +1678,7 @@ function renderMemberContrib() {
   $('#contribBars').innerHTML = rows.map((r, i) => {
     const pct = total ? Math.round(r.count / total * 100) : 0;
     const w = maxCount ? Math.round(r.count / maxCount * 100) : 0;
-    return `<div class="contrib-bar-row" data-mid="${escapeHtml(r.member.id)}" style="--c:${contribColor(i)}">
+    return `<div class="contrib-bar-row" data-mid="${escapeHtml(r.member.id)}" tabindex="0" role="button" aria-label="展開 ${escapeHtml(r.member.name)} 明細" style="--c:${contribColor(i)}">
       <div class="contrib-bar-top">
         <span class="contrib-dot" style="background:${contribColor(i)}"></span>
         <span class="contrib-name">${escapeHtml(r.member.name)}</span>
@@ -2083,8 +2117,8 @@ function saveBill(e) {
   const amount = parseFloat($('#billAmount').value);
   const due = $('#billDue').value;
   let ok = true;
-  if (!name) { $('#errBillName').textContent = '請輸入項目名稱'; ok = false; }
-  if (!(amount > 0)) { $('#errBillAmount').textContent = '請輸入大於 0 的金額'; ok = false; }
+  if (!name) { setErr('errBillName', '請輸入項目名稱'); ok = false; }
+  if (!(amount > 0)) { setErr('errBillAmount', '請輸入大於 0 的金額'); ok = false; }
   // 類別、扣款帳戶、週期、首次到期日均為選填
   if (!ok) return;
   // 發生月份：全選或全不選都視為「全年」→ 存 null，保持資料乾淨
@@ -2393,6 +2427,17 @@ function bindListDelegation() {
     const billEdit = e.target.closest('[data-billedit]');
     if (billEdit) return openBillModal(billEdit.dataset.billedit);
   });
+  // #18 修復：可點擊列表列（交易/繳費/帳戶/成員/旅程/分擔長條）支援鍵盤 Enter/Space（WCAG 2.1.1）
+  // 透過 .click() 觸發與滑鼠完全一致的既有委託邏輯；closest 只往上找祖先，故不會誤觸子按鈕。
+  document.body.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
+    const el = e.target;
+    if (!el || !el.closest) return;
+    // 原生互動元素（button/a/input/select/textarea）自帶 Enter/Space 行為，交給它們處理
+    if (/^(BUTTON|A|INPUT|SELECT|TEXTAREA)$/i.test(el.tagName)) return;
+    const row = el.closest('[data-txn],[data-billedit],[data-accedit],[data-memberedit],[data-trip],[data-goto],[data-mid]');
+    if (row && el === row) { e.preventDefault(); row.click(); }
+  });
 }
 
 /** 批量選擇（勾選刪除）事件 */
@@ -2410,6 +2455,41 @@ function bindMiscEvents() {
   $$('.modal').forEach(m => m.addEventListener('click', e => {
     if (e.target === m || e.target.closest('[data-close]')) m.hidden = true;
   }));
+
+  // #2 修復：Esc 關閉最上層可見彈窗（鍵盤可用）
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      const m = Array.from($$('.modal')).find(x => !x.hidden);
+      if (m) m.hidden = true;
+    }
+  });
+
+  // #2 修復：彈窗焦點管理——開啟時把焦點移入並約束在彈窗內（焦點陷阱）
+  const FOCUSABLE = 'input:not([type=hidden]),select,textarea,button,[tabindex]:not([tabindex="-1"])';
+  $$('.modal').forEach(m => {
+    m.addEventListener('keydown', e => {
+      if (e.key !== 'Tab') return;
+      const f = m.querySelectorAll(FOCUSABLE);
+      if (!f.length) return;
+      const first = f[0], last = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    });
+    // 監聽 hidden 變化：顯示時聚焦首個可聚焦元素，關閉時把焦點還給原觸發者
+    let prev = m.hidden;
+    const obs = new MutationObserver(() => {
+      if (m.hidden === prev) return;
+      prev = m.hidden;
+      if (!m.hidden) {
+        m._lastFocus = document.activeElement;
+        const f = m.querySelector(FOCUSABLE);
+        if (f) setTimeout(() => f.focus(), 60);
+      } else if (m._lastFocus && m._lastFocus.focus) {
+        m._lastFocus.focus();
+      }
+    });
+    obs.observe(m, { attributes: true, attributeFilter: ['hidden'] });
+  });
 
   // 記帳篩選
   $('#searchKeyword').addEventListener('input', renderRecords);
@@ -2488,12 +2568,148 @@ function bindSplitCalcEvents() {
   });
 }
 
+// =========================================================
+//  掃描記帳（電子支付畫面 OCR）  yu-v3.61
+//  選圖 → Tesseract.js 離線 OCR（eng+chi_tra）→ 解析金額/日期/店家 → 預填記帳表單
+// =========================================================
+let _tesseractLoading = null;
+function loadTesseract() {
+  if (window.Tesseract) return Promise.resolve(window.Tesseract);
+  if (_tesseractLoading) return _tesseractLoading;
+  _tesseractLoading = new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+    s.onload = () => window.Tesseract ? res(window.Tesseract) : rej(new Error('OCR 引擎未就緒'));
+    s.onerror = () => rej(new Error('OCR 腳本載入失敗（需要網路連線）'));
+    document.head.appendChild(s);
+  });
+  return _tesseractLoading;
+}
+
+function openScan() { const inp = $('#scanImageInput'); if (inp) inp.click(); }
+
+function handleScanImage(e) {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = '';                 // 允許重選同一張圖
+  if (!file) return;
+  if (!/^image\//.test(file.type)) { toast('請選擇圖片檔'); return; }
+  const reader = new FileReader();
+  reader.onload = () => runOCR(reader.result);
+  reader.onerror = () => toast('圖片讀取失敗');
+  reader.readAsDataURL(file);
+}
+
+function runOCR(dataUrl) {
+  const modal = $('#scanModal');
+  if (!modal) return;
+  $('#scanPreview').src = dataUrl;
+  $('#scanResult').hidden = true;
+  $('#scanLoading').hidden = false;
+  $('#scanProgress').style.width = '0%';
+  $('#scanStatus').textContent = '準備 OCR 引擎…';
+  modal.hidden = false;
+  loadTesseract().then(T => {
+    $('#scanStatus').textContent = '辨識中…';
+    return T.recognize(dataUrl, 'eng+chi_tra', {
+      logger: p => {
+        if (p.status === 'recognizing text') {
+          const pct = Math.round((p.progress || 0) * 100);
+          $('#scanProgress').style.width = pct + '%';
+          $('#scanStatus').textContent = '辨識中… ' + pct + '%';
+        }
+      }
+    });
+  }).then(({ data }) => {
+    const parsed = parseReceiptText(data.text || '');
+    fillScanResult(parsed, data.text || '');
+    $('#scanLoading').hidden = true;
+    $('#scanResult').hidden = false;
+  }).catch(err => {
+    $('#scanLoading').hidden = true;
+    $('#scanResult').hidden = false;
+    $('#scanStatus').textContent = '辨識失敗：' + (err && err.message ? err.message : '請確認網路連線');
+    toast('辨識失敗，請手動輸入');
+  });
+}
+
+function parseReceiptText(text) {
+  const lines = text.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  const joined = text.replace(/\s+/g, ' ');
+  // ---- 金額 ----
+  let amount = null;
+  const labeled = [
+    /(?:金額|消費|付款|應付|合計|總計|總額|實付|本次交易|扣款)[\s:：]*NT?\$?\s*([\d,]+\.?\d*)/i,
+    /NT\$\s*([\d,]+\.?\d*)/i,
+    /\$\s*([\d,]+\.?\d*)/,
+  ];
+  for (const re of labeled) {
+    const m = joined.match(re);
+    if (m) { const v = parseFloat(m[1].replace(/,/g, '')); if (v > 0) { amount = v; break; } }
+  }
+  if (amount == null) {
+    const m2 = joined.match(/(?:^|[^\d])([\d,]{1,3}(?:,\d{3})+\.\d{2}|[\d,]+\.\d{2})(?![\d])/);
+    if (m2) { const v = parseFloat(m2[1].replace(/,/g, '')); if (v > 0) amount = v; }
+  }
+  // ---- 日期 ----
+  let date = '';
+  const dm = text.match(/(\d{4})[/\-.](\d{1,2})[/\-.](\d{1,2})/);
+  if (dm) {
+    const y = +dm[1], mo = String(+dm[2]).padStart(2, '0'), d = String(+dm[3]).padStart(2, '0');
+    if (y >= 2000 && y <= 2100) date = y + '-' + mo + '-' + d;
+  } else {
+    const dm2 = text.match(/(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})/);
+    if (dm2) {
+      let y = +dm2[3]; if (y < 100) y += 2000;
+      const mo = String(+dm2[1]).padStart(2, '0'), d = String(+dm2[2]).padStart(2, '0');
+      if (y >= 2000 && y <= 2100) date = y + '-' + mo + '-' + d;
+    }
+  }
+  // ---- 店家（備註，盡力而為）----
+  const skipKw = /(金額|消費|付款|應付|合計|總計|總額|實付|餘額|交易|時間|日期|成功|完成|確認|感謝|謝謝|card|visa|master|jcb|unionpay|帳號|序號|電話|tel|http|www|payment|receipt|success|complete|confirm|thank|amount|total|subtotal|tax|fee|discount|line\s*pay|一卡通|apple\s*pay|google\s*pay|街口|台灣\s*pay|全支付|悠遊|icash|\d{4}[\s-]?\d{4})/i;
+  let merchant = '';
+  for (const ln of lines) {
+    if (ln.length < 2 || ln.length > 24) continue;
+    if (/^[\d\s\/.:-]+$/.test(ln)) continue;
+    if (skipKw.test(ln)) continue;
+    if (/[一-龥]/.test(ln) || /[A-Za-z]/.test(ln)) { merchant = ln; break; }
+  }
+  if (merchant) merchant = merchant.replace(/^(特店|商店|店家|商戶|特約|merchant|store|shop|payee)\s*[:：]\s*/i, '').trim();
+  return { amount, date, merchant, raw: text };
+}
+
+function fillScanResult(p, raw) {
+  $('#scanAmount').value = p.amount != null ? p.amount : '';
+  $('#scanDate').value = p.date || '';
+  $('#scanNote').value = p.merchant || '';
+  $('#scanRaw').value = raw.length > 600 ? raw.slice(0, 600) : raw;
+}
+
+function applyScanToTxn() {
+  const amount = parseFloat($('#scanAmount').value);
+  const date = $('#scanDate').value;
+  const note = $('#scanNote').value.trim();
+  $('#scanModal').hidden = true;
+  openTxnModal();                         // 開新交易（預設支出）
+  if (amount > 0) $('#txnAmount').value = amount;
+  if (date) $('#txnDate').value = date;
+  $('#txnNote').value = note;
+  toast('已帶入，請核對後儲存');
+}
+
+function bindScanEvents() {
+  const btn = $('#scanTxnBtn'); if (btn) btn.addEventListener('click', openScan);
+  const inp = $('#scanImageInput'); if (inp) inp.addEventListener('change', handleScanImage);
+  const apply = $('#scanApplyBtn'); if (apply) apply.addEventListener('click', applyScanToTxn);
+  const retry = $('#scanRetryBtn'); if (retry) retry.addEventListener('click', openScan);
+}
+
 function bindEvents() {
   bindTabBarEvents();
   bindTxnEvents();
   bindAccountEvents();
   bindMemberEvents();
   bindTripsEvents();
+  bindScanEvents();
   bindBillEvents();
   bindListDelegation();
   bindSelEvents();
@@ -2694,14 +2910,19 @@ function computeTripSettle(trip) {
   txns.forEach(t => {
     const v = conv(t.amount, t.currency);
     total += v; count++;
-    const payerId = t.paidBy || '';
-    if (payerId) {
-      if (!map.has(payerId)) {
-        const m = DB.members.find(x => x.id === payerId);
-        if (m) map.set(payerId, { id: payerId, name: m.name, payable: 0, paid: 0 });
+    // 付款人（相容舊單值 & 新陣列）：多人合付時，每人墊付金額均分
+    const payerIds = Array.isArray(t.paidBy) ? t.paidBy : (t.paidBy ? [t.paidBy] : []);
+    const payerCount = payerIds.length || 1;
+    const paidEach = v / payerCount;
+    payerIds.forEach(pid => {
+      if (!pid) return;
+      if (!map.has(pid)) {
+        const m = DB.members.find(x => x.id === pid);
+        if (m) map.set(pid, { id: pid, name: m.name, payable: 0, paid: 0 });
       }
-      map.get(payerId).paid += v;
-    }
+      const pm = map.get(pid);
+      if (pm) pm.paid += paidEach;
+    });
     if (t.splitMode && t.splitMode !== 'none' && Array.isArray(t.shares) && t.shares.length) {
       const amts = computeSplitAmounts(t.amount, t.splitMode, t.shares);
       amts.forEach(a => {
@@ -2713,8 +2934,12 @@ function computeTripSettle(trip) {
         }
         map.get(a.memberId).payable += share;
       });
-    } else if (payerId) {
-      map.get(payerId).payable += v;   // 無分擔：付款人全額負擔
+    } else if (payerIds.length) {
+      // 無分擔：由付款人全額負擔（多人則均攤）
+      payerIds.forEach(pid => {
+        const pm = map.get(pid);
+        if (pm) pm.payable += paidEach;
+      });
     }
   });
   const rows = [...map.values()].filter(r => r.payable > 0 || r.paid > 0)
@@ -2761,10 +2986,10 @@ function renderTrips() {
       const over = budget > 0 && spent > budget;
       const days = (t.startDate && t.endDate) ? `${t.startDate} ~ ${t.endDate}` : (t.startDate || t.endDate || '未設日期');
       const memCnt = (t.memberIds && t.memberIds.length) || 0;
-      return `<div class="trip-card" data-trip="${t.id}">
+      return `<div class="trip-card" data-trip="${t.id}" tabindex="0" aria-label="檢視旅程 ${escapeHtml(t.name)}">
         <div class="trip-card-head">
           <div class="trip-title">🧳 ${escapeHtml(t.name)}</div>
-          <button class="trip-edit" data-edit-trip="${t.id}" title="編輯">✎</button>
+          <button class="trip-edit" data-edit-trip="${t.id}" title="編輯" aria-label="編輯旅程">✎</button>
         </div>
         <div class="trip-meta">📍 ${escapeHtml(t.destination || '未填目的地')} · ${escapeHtml(days)}</div>
         <div class="trip-budget">
@@ -2867,12 +3092,15 @@ function renderTripDetail(id) {
 function tripTxnRow(t, tcur) {
   const icon = CAT_ICON[t.category] || '📦';
   const sp = splitText(t);
-  const payer = t.paidBy && DB.members.find(x => x.id === t.paidBy);
+  // paidBy 相容舊（字串）與新（陣列）
+  const payerIds = Array.isArray(t.paidBy) ? t.paidBy : (t.paidBy ? [t.paidBy] : []);
+  const payerNames = payerIds.map(id => { const m = DB.members.find(x => x.id === id); return m ? m.name : id; });
+  const payerStr = payerNames.length ? '付：' + payerNames.join('、') : '';
   return `<div class="txn-item" data-ttxn="${t.id}">
     <div class="txn-icon">${icon}</div>
     <div class="txn-main">
       <div class="txn-cat">${escapeHtml(t.category)}</div>
-      <div class="txn-meta">${fmtDate(t.date)}${payer ? ' · 付：' + escapeHtml(payer.name) : ''}${sp ? ' · ' + escapeHtml(sp) : ''}</div>
+      <div class="txn-meta">${fmtDate(t.date)}${payerStr ? ' · ' + escapeHtml(payerStr) : ''}${sp ? ' · ' + escapeHtml(sp) : ''}</div>
     </div>
     <div class="txn-amount expense">-${fmtMoneyCur(t.amount, t.currency || '')}${curBadge(t.currency || '')}</div>
     <button class="icon-btn" type="button" data-del-ttxn="${t.id}" title="刪除">✕</button>
@@ -2882,6 +3110,13 @@ function tripTxnRow(t, tcur) {
 /* ---------- 旅程內花費（獨立帳本，不進 DB.txns） ---------- */
 let editTripTxnId = null;
 let editTripTxnTripId = null;
+function getTripSplitMode() {
+  const el = document.querySelector('#tripTxnSplit .seg.active');
+  return el ? el.dataset.split : 'none';
+}
+function setTripSplitMode(v) {
+  document.querySelectorAll('#tripTxnSplit .seg').forEach(b => b.classList.toggle('active', b.dataset.split === v));
+}
 function openTripTxnModal(tripId, txnId) {
   const trip = DB.trips.find(x => x.id === tripId);
   if (!trip) return;
@@ -2890,11 +3125,34 @@ function openTripTxnModal(tripId, txnId) {
   const modal = $('#tripTxnModal');
   $('#tripTxnModalTitle').textContent = txnId ? '編輯花費' : '新增花費';
   $('#deleteTripTxnBtn').hidden = !txnId;
-  $('#errTripTxnAmount').textContent = '';
-  $('#errTripTxnDate').textContent = '';
-  // 付款人：限本旅程成員
+  clearErr(['errTripTxnAmount', 'errTripTxnDate', 'errTripTxnPaidBy']);
+  // 付款人（可多選）：限本旅程成員，用 checkbox
   const members = (trip.memberIds || []).map(id => DB.members.find(m => m.id === id)).filter(Boolean);
-  $('#tripTxnPaidBy').innerHTML = '<option value="">未指定</option>' + members.map(m => `<option value="${m.id}">${escapeHtml(m.name)}</option>`).join('');
+  const paidByBox = $('#tripTxnPaidBy');
+  if (!members.length) {
+    paidByBox.innerHTML = '<small class="hint">尚無成員，請先到旅程設定新增團員</small>';
+  } else {
+    paidByBox.innerHTML = members.map(m =>
+      `<label class="member-chip"><input type="checkbox" name="tripTxnPayer" value="${m.id}" /> ${escapeHtml(m.name)}</label>`
+    ).join('');
+  }
+  // 分擔成員（可多選）：限本旅程成員
+  const splitBox = $('#tripTxnSplitMembers');
+  if (!members.length) {
+    splitBox.innerHTML = '<small class="hint">尚無成員，請先到旅程設定新增團員</small>';
+  } else {
+    splitBox.innerHTML = members.map(m =>
+      `<label class="member-chip"><input type="checkbox" name="tripTxnSplitMember" value="${m.id}" /> ${escapeHtml(m.name)}</label>`
+    ).join('');
+  }
+  // 切換「分擔方式」時顯示/隱藏分擔成員（分段控制）
+  const toggleSplitMembers = () => {
+    const on = getTripSplitMode() === 'equal';
+    $('#tripTxnSplitMembersField').hidden = !on || !members.length;
+  };
+  $('#tripTxnSplit').querySelectorAll('.seg').forEach(b => {
+    b.onclick = () => { setTripSplitMode(b.dataset.split); toggleSplitMembers(); };
+  });
   fillCurrencySelect($('#tripTxnCurrency'), trip.currency || DB.settings.currency);
   fillCategorySelect($('#tripTxnCategory'), 'expense', '');
   if (txnId) {
@@ -2905,14 +3163,28 @@ function openTripTxnModal(tripId, txnId) {
     $('#tripTxnNote').value = t.note || '';
     fillCurrencySelect($('#tripTxnCurrency'), t.currency || trip.currency || DB.settings.currency);
     fillCategorySelect($('#tripTxnCategory'), 'expense', t.category || '');
-    $('#tripTxnPaidBy').value = t.paidBy || '';
-    $('#tripTxnSplit').value = (t.splitMode && t.splitMode !== 'none') ? 'equal' : 'none';
+    // 多選付款人：勾選已有值（相容舊單值 & 新陣列）
+    const existingPayers = Array.isArray(t.paidBy) ? t.paidBy : (t.paidBy ? [t.paidBy] : []);
+    paidByBox.querySelectorAll('input[name="tripTxnPayer"]').forEach(cb => {
+      cb.checked = existingPayers.includes(cb.value);
+    });
+    setTripSplitMode((t.splitMode && t.splitMode !== 'none') ? 'equal' : 'none');
+    // 分擔成員：勾選已有值（相容舊資料全員均分）
+    const existingSplit = (t.splitMode && t.splitMode !== 'none' && Array.isArray(t.shares))
+      ? t.shares.map(s => s.memberId) : [];
+    splitBox.querySelectorAll('input[name="tripTxnSplitMember"]').forEach(cb => {
+      cb.checked = existingSplit.length ? existingSplit.includes(cb.value) : true;
+    });
+    toggleSplitMembers();
   } else {
     $('#tripTxnAmount').value = '';
     $('#tripTxnDate').value = todayISO();
     $('#tripTxnNote').value = '';
-    $('#tripTxnPaidBy').value = (trip.memberIds && trip.memberIds[0]) || '';
-    $('#tripTxnSplit').value = 'none';
+    // 新增時預設不勾選任何付款人（讓使用者自己選）
+    paidByBox.querySelectorAll('input[name="tripTxnPayer"]').forEach(cb => { cb.checked = false; });
+    setTripSplitMode('none');
+    splitBox.querySelectorAll('input[name="tripTxnSplitMember"]').forEach(cb => { cb.checked = false; });
+    toggleSplitMembers();
   }
   modal.hidden = false;
 }
@@ -2923,11 +3195,18 @@ function saveTripTxn(e) {
   const amount = parseFloat($('#tripTxnAmount').value);
   const date = $('#tripTxnDate').value;
   let ok = true;
-  if (!(amount > 0)) { $('#errTripTxnAmount').textContent = '請輸入大於 0 的金額'; ok = false; }
-  if (!date) { $('#errTripTxnDate').textContent = '請選擇日期'; ok = false; }
+  if (!(amount > 0)) { setErr('errTripTxnAmount', '請輸入大於 0 的金額'); ok = false; }
+  if (!date) { setErr('errTripTxnDate', '請選擇日期'); ok = false; }
   if (!ok) return;
-  const splitMode = $('#tripTxnSplit').value === 'equal' ? 'equal' : 'none';
-  const shares = splitMode === 'equal' ? (trip.memberIds || []).map(id => ({ memberId: id })) : [];
+  const splitMode = getTripSplitMode() === 'equal' ? 'equal' : 'none';
+  // 分擔成員：收集勾選的 member ID（可多選；一個都沒勾則退回全體團員）
+  let splitMemberIds = [...$('#tripTxnSplitMembers').querySelectorAll('input[name="tripTxnSplitMember"]:checked')].map(cb => cb.value);
+  if (splitMode === 'equal' && splitMemberIds.length === 0) splitMemberIds = (trip.memberIds || []).slice();
+  const shares = splitMode === 'equal' ? splitMemberIds.map(id => ({ memberId: id })) : [];
+  // 付款人：收集所有勾選的 member ID（陣列）
+  const paidByArr = [...$('#tripTxnPaidBy').querySelectorAll('input[name="tripTxnPayer"]:checked')].map(cb => cb.value);
+  if (!paidByArr.length) { setErr('errTripTxnPaidBy', '請至少選擇一位付款人'); ok = false; }
+  if (!ok) return;
   const payload = {
     type: 'expense',
     amount: Math.round(amount * 100) / 100,
@@ -2935,7 +3214,7 @@ function saveTripTxn(e) {
     category: $('#tripTxnCategory').value || '其他',
     note: $('#tripTxnNote').value.trim(),
     currency: $('#tripTxnCurrency').value || trip.currency || DB.settings.currency,
-    paidBy: $('#tripTxnPaidBy').value || '',
+    paidBy: paidByArr,
     splitMode, shares,
   };
   if (!Array.isArray(trip.txns)) trip.txns = [];
@@ -2980,7 +3259,7 @@ function renderDashTrips() {
     const tcur = t.currency || DB.settings.currency;
     const spent = tripSpent(t);
     const budget = Number(t.budget) || 0;
-    return `<div class="trip-mini" data-goto="trips">
+    return `<div class="trip-mini" data-goto="trips" tabindex="0" role="button" aria-label="檢視旅程 ${escapeHtml(t.name)}">
       <div class="trip-mini-name">🧳 ${escapeHtml(t.name)}</div>
       <div class="trip-mini-sub">${escapeHtml(t.destination || '')} · 已花 ${fmtMoneyCur(Math.round(spent * 100) / 100, tcur)}${budget > 0 ? (' / ' + fmtMoneyCur(budget, tcur)) : ''}</div>
     </div>`;
@@ -3001,7 +3280,7 @@ function openTripModal(id) {
   const modal = $('#tripModal');
   $('#tripModalTitle').textContent = id ? '編輯旅程' : '新增旅程';
   $('#deleteTripBtn').hidden = !id;
-  $('#errTripName').textContent = '';
+  clearErr(['errTripName']);
   if (id) {
     const t = DB.trips.find(x => x.id === id);
     if (!t) { toast('該旅程不存在'); modal.hidden = true; render(); return; }
@@ -3028,7 +3307,7 @@ function openTripModal(id) {
 function saveTrip(e) {
   e.preventDefault();
   const name = $('#tripName').value.trim();
-  if (!name) { $('#errTripName').textContent = '請輸入旅程名稱'; return; }
+  if (!name) { setErr('errTripName', '請輸入旅程名稱'); return; }
   const memberIds = [...document.querySelectorAll('#tripMembers input:checked')].map(c => c.value);
   const payload = {
     name,
