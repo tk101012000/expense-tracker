@@ -1001,3 +1001,7 @@ body[data-theme="dark"] .skeleton::after { background: linear-gradient(90deg, tr
     scroll-behavior: auto !important;
   }
 }
+
+/* v3.72：旅程「未設匯率」提示橫幅（P4 修正） */
+.rate-warn{display:flex;gap:8px;align-items:flex-start;padding:10px 12px;border-radius:10px;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.45);color:var(--text);font-size:.85rem;line-height:1.45}
+.rate-warn-icon{flex:0 0 auto;font-size:1.05rem;line-height:1.2}

@@ -110,7 +110,7 @@ const CHART_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#f59e0b', '#8b5cf6', '#0
 function cssVar(name, fallback) { const v = getComputedStyle(document.body).getPropertyValue(name); return v ? v.trim() : (fallback || ''); }
 
 /* ---------- 版本資訊 ---------- */
-const APP_VERSION = 'yu-v3.71';
+const APP_VERSION = 'yu-v3.72';
 const APP_BUILD_DATE = '2026-08-29';
 // 暴露給原生 APP（TWA）讀取，使頁尾版本號隨網頁自動更新
 window.APP_VERSION = APP_VERSION;
@@ -406,7 +406,7 @@ function renderDashboard() {
   drawDoughnut($('#dashDoughnut'), catData, $('#dashLegend'));
 
   // 最近交易
-  const recent = [...DB.txns].sort((a, b) => (b.date + b.createdAt).localeCompare(a.date + a.createdAt)).slice(0, 6);
+  const recent = [...DB.txns].sort((a, b) => (b.date + (b.createdAt || 0)).localeCompare(a.date + (a.createdAt || 0))).slice(0, 6);
   $('#recentList').innerHTML = recent.length ? recent.map(txnRowHtml).join('') : '<div class="empty">尚無交易，點擊 ＋ 開始記帳</div>';
 
   // 旅遊記帳迷你卡片
@@ -466,10 +466,10 @@ function renderRecords() {
   });
 
   list.sort((a, b) => {
-    if (sort === 'date_asc') return (a.date + a.createdAt).localeCompare(b.date + b.createdAt);
+    if (sort === 'date_asc') return (a.date + (a.createdAt || 0)).localeCompare(b.date + (b.createdAt || 0));
     if (sort === 'amount_desc') return b.amount - a.amount;
     if (sort === 'amount_asc') return a.amount - b.amount;
-    return (b.date + b.createdAt).localeCompare(a.date + a.createdAt); // date_desc
+    return (b.date + (b.createdAt || 0)).localeCompare(a.date + (a.createdAt || 0)); // date_desc
   });
 
   const inc = list.filter(t => t.type === 'income').reduce((s, t) => s + Number(t.amount), 0);
@@ -3046,6 +3046,10 @@ function renderTripDetail(id) {
   const pct = budget > 0 ? Math.min(100, Math.round(spent / budget * 100)) : 0;
   const over = budget > 0 && spent > budget;
   const txns = tripTxns(trip);
+  // v3.72：P4 修正 — 偵測「有外幣花費但未設匯率」，於明細頂部顯示提示，避免誤以為已自動換算
+  const foreignCurs = [...new Set(txns.map(t => t.currency || tcur).filter(c => c !== tcur))];
+  const missingRateCurs = foreignCurs.filter(c => !(trip.rates && trip.rates[c]));
+  const mixedNoRate = missingRateCurs.length > 0;
   const catMap = {};
   txns.filter(t => t.type === 'expense').forEach(t => {
     const v = tripConvert(t.amount, t.currency, tcur, trip.rates);
@@ -3064,6 +3068,7 @@ function renderTripDetail(id) {
       </div>
       <button class="ghost-btn small" id="tripEditBtn">編輯</button>
     </div>
+    ${mixedNoRate ? `<div class="card rate-warn"><span class="rate-warn-icon">⚠️</span><div><b>未設匯率：</b>以下幣別的花費未按旅程幣別換算，結算以原值計入（${missingRateCurs.join('、')}）。請在「編輯旅程」填入匯率以正確換算。</div></div>` : ''}
     <div class="card">
       <div class="card-head"><h2>預算概覽</h2></div>
       <div class="trip-budget big">
