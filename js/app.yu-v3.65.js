@@ -110,8 +110,8 @@ const CHART_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#f59e0b', '#8b5cf6', '#0
 function cssVar(name, fallback) { const v = getComputedStyle(document.body).getPropertyValue(name); return v ? v.trim() : (fallback || ''); }
 
 /* ---------- 版本資訊 ---------- */
-const APP_VERSION = 'yu-v3.64';
-const APP_BUILD_DATE = '2026-08-17';
+const APP_VERSION = 'yu-v3.65';
+const APP_BUILD_DATE = '2026-08-29';
 // 暴露給原生 APP（TWA）讀取，使頁尾版本號隨網頁自動更新
 window.APP_VERSION = APP_VERSION;
 window.APP_BUILD_DATE = APP_BUILD_DATE;
@@ -3119,7 +3119,6 @@ function openTripTxnModal(tripId, txnId) {
     $('#tripTxnNote').value = t.note || '';
     fillCurrencySelect($('#tripTxnCurrency'), t.currency || trip.currency || DB.settings.currency);
     fillCategorySelect($('#tripTxnCategory'), 'expense', t.category || '');
-    $('#tripTxnPaidBy').value = t.paidBy || '';
     // 多選付款人：勾選已有值（相容舊單值 & 新陣列）
     const existingPayers = Array.isArray(t.paidBy) ? t.paidBy : (t.paidBy ? [t.paidBy] : []);
     paidByBox.querySelectorAll('input[name="tripTxnPayer"]').forEach(cb => {
