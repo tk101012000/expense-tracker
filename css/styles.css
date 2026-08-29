@@ -11,6 +11,10 @@
   --primary: #2563eb;
   --primary-dark: #1d4ed8;
   --primary-soft: #e8f0fe;
+  /* 派生 token（旅遊模組 / OAuth 兜底面板引用；映射自現有 token 以自動適配暗色模式） */
+  --bg-card: var(--surface);      /* 卡片底：亮色＝白、暗色＝深表面 */
+  --bg-soft: var(--surface-2);     /* 淺底：編輯鈕、預算條軌道 */
+  --primary-50: var(--primary-soft); /* 主色超淺填充：成員 chip 勾選高亮 */
   /* 語義色（更鮮亮現代） */
   --expense: #d32f2f;   /* #10 修復：由 #ef4444(3.3:1) 提升至 ~4.6:1 */
   --income: #15803d;   /* #10 修復：由 #16a34a(2.8:1) 提升至 ~4.8:1 */

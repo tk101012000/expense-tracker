@@ -110,7 +110,7 @@ const CHART_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#f59e0b', '#8b5cf6', '#0
 function cssVar(name, fallback) { const v = getComputedStyle(document.body).getPropertyValue(name); return v ? v.trim() : (fallback || ''); }
 
 /* ---------- 版本資訊 ---------- */
-const APP_VERSION = 'yu-v3.68';
+const APP_VERSION = 'yu-v3.69';
 const APP_BUILD_DATE = '2026-08-29';
 // 暴露給原生 APP（TWA）讀取，使頁尾版本號隨網頁自動更新
 window.APP_VERSION = APP_VERSION;
@@ -2978,7 +2978,7 @@ function renderTrips() {
       return `<div class="trip-card" data-trip="${t.id}">
         <div class="trip-card-head">
           <div class="trip-title">🧳 ${escapeHtml(t.name)}</div>
-          <button class="trip-edit" data-edit-trip="${t.id}" title="編輯">✎</button>
+          <button class="trip-edit" data-edit-trip="${t.id}" title="編輯" aria-label="編輯旅程">✎</button>
         </div>
         <div class="trip-meta">📍 ${escapeHtml(t.destination || '未填目的地')} · ${escapeHtml(days)}</div>
         <div class="trip-budget">
