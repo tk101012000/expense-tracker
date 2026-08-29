@@ -110,7 +110,7 @@ const CHART_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#f59e0b', '#8b5cf6', '#0
 function cssVar(name, fallback) { const v = getComputedStyle(document.body).getPropertyValue(name); return v ? v.trim() : (fallback || ''); }
 
 /* ---------- 版本資訊 ---------- */
-const APP_VERSION = 'yu-v3.66';
+const APP_VERSION = 'yu-v3.67';
 const APP_BUILD_DATE = '2026-08-29';
 // 暴露給原生 APP（TWA）讀取，使頁尾版本號隨網頁自動更新
 window.APP_VERSION = APP_VERSION;
@@ -2899,14 +2899,19 @@ function computeTripSettle(trip) {
   txns.forEach(t => {
     const v = conv(t.amount, t.currency);
     total += v; count++;
-    const payerId = t.paidBy || '';
-    if (payerId) {
-      if (!map.has(payerId)) {
-        const m = DB.members.find(x => x.id === payerId);
-        if (m) map.set(payerId, { id: payerId, name: m.name, payable: 0, paid: 0 });
+    // 付款人（相容舊單值 & 新陣列）：多人合付時，每人墊付金額均分
+    const payerIds = Array.isArray(t.paidBy) ? t.paidBy : (t.paidBy ? [t.paidBy] : []);
+    const payerCount = payerIds.length || 1;
+    const paidEach = v / payerCount;
+    payerIds.forEach(pid => {
+      if (!pid) return;
+      if (!map.has(pid)) {
+        const m = DB.members.find(x => x.id === pid);
+        if (m) map.set(pid, { id: pid, name: m.name, payable: 0, paid: 0 });
       }
-      map.get(payerId).paid += v;
-    }
+      const pm = map.get(pid);
+      if (pm) pm.paid += paidEach;
+    });
     if (t.splitMode && t.splitMode !== 'none' && Array.isArray(t.shares) && t.shares.length) {
       const amts = computeSplitAmounts(t.amount, t.splitMode, t.shares);
       amts.forEach(a => {
@@ -2918,8 +2923,12 @@ function computeTripSettle(trip) {
         }
         map.get(a.memberId).payable += share;
       });
-    } else if (payerId) {
-      map.get(payerId).payable += v;   // 無分擔：付款人全額負擔
+    } else if (payerIds.length) {
+      // 無分擔：由付款人全額負擔（多人則均攤）
+      payerIds.forEach(pid => {
+        const pm = map.get(pid);
+        if (pm) pm.payable += paidEach;
+      });
     }
   });
   const rows = [...map.values()].filter(r => r.payable > 0 || r.paid > 0)
