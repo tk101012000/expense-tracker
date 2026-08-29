@@ -110,7 +110,7 @@ const CHART_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#f59e0b', '#8b5cf6', '#0
 function cssVar(name, fallback) { const v = getComputedStyle(document.body).getPropertyValue(name); return v ? v.trim() : (fallback || ''); }
 
 /* ---------- 版本資訊 ---------- */
-const APP_VERSION = 'yu-v3.67';
+const APP_VERSION = 'yu-v3.68';
 const APP_BUILD_DATE = '2026-08-29';
 // 暴露給原生 APP（TWA）讀取，使頁尾版本號隨網頁自動更新
 window.APP_VERSION = APP_VERSION;
@@ -3099,6 +3099,13 @@ function tripTxnRow(t, tcur) {
 /* ---------- 旅程內花費（獨立帳本，不進 DB.txns） ---------- */
 let editTripTxnId = null;
 let editTripTxnTripId = null;
+function getTripSplitMode() {
+  const el = document.querySelector('#tripTxnSplit .seg.active');
+  return el ? el.dataset.split : 'none';
+}
+function setTripSplitMode(v) {
+  document.querySelectorAll('#tripTxnSplit .seg').forEach(b => b.classList.toggle('active', b.dataset.split === v));
+}
 function openTripTxnModal(tripId, txnId) {
   const trip = DB.trips.find(x => x.id === tripId);
   if (!trip) return;
@@ -3107,7 +3114,7 @@ function openTripTxnModal(tripId, txnId) {
   const modal = $('#tripTxnModal');
   $('#tripTxnModalTitle').textContent = txnId ? '編輯花費' : '新增花費';
   $('#deleteTripTxnBtn').hidden = !txnId;
-  clearErr(['errTripTxnAmount', 'errTripTxnDate']);
+  clearErr(['errTripTxnAmount', 'errTripTxnDate', 'errTripTxnPaidBy']);
   // 付款人（可多選）：限本旅程成員，用 checkbox
   const members = (trip.memberIds || []).map(id => DB.members.find(m => m.id === id)).filter(Boolean);
   const paidByBox = $('#tripTxnPaidBy');
@@ -3127,12 +3134,14 @@ function openTripTxnModal(tripId, txnId) {
       `<label class="member-chip"><input type="checkbox" name="tripTxnSplitMember" value="${m.id}" /> ${escapeHtml(m.name)}</label>`
     ).join('');
   }
-  // 切換「分擔方式」時顯示/隱藏分擔成員
+  // 切換「分擔方式」時顯示/隱藏分擔成員（分段控制）
   const toggleSplitMembers = () => {
-    const on = $('#tripTxnSplit').value === 'equal';
+    const on = getTripSplitMode() === 'equal';
     $('#tripTxnSplitMembersField').hidden = !on || !members.length;
   };
-  $('#tripTxnSplit').onchange = toggleSplitMembers;
+  $('#tripTxnSplit').querySelectorAll('.seg').forEach(b => {
+    b.onclick = () => { setTripSplitMode(b.dataset.split); toggleSplitMembers(); };
+  });
   fillCurrencySelect($('#tripTxnCurrency'), trip.currency || DB.settings.currency);
   fillCategorySelect($('#tripTxnCategory'), 'expense', '');
   if (txnId) {
@@ -3148,7 +3157,7 @@ function openTripTxnModal(tripId, txnId) {
     paidByBox.querySelectorAll('input[name="tripTxnPayer"]').forEach(cb => {
       cb.checked = existingPayers.includes(cb.value);
     });
-    $('#tripTxnSplit').value = (t.splitMode && t.splitMode !== 'none') ? 'equal' : 'none';
+    setTripSplitMode((t.splitMode && t.splitMode !== 'none') ? 'equal' : 'none');
     // 分擔成員：勾選已有值（相容舊資料全員均分）
     const existingSplit = (t.splitMode && t.splitMode !== 'none' && Array.isArray(t.shares))
       ? t.shares.map(s => s.memberId) : [];
@@ -3162,7 +3171,7 @@ function openTripTxnModal(tripId, txnId) {
     $('#tripTxnNote').value = '';
     // 新增時預設不勾選任何付款人（讓使用者自己選）
     paidByBox.querySelectorAll('input[name="tripTxnPayer"]').forEach(cb => { cb.checked = false; });
-    $('#tripTxnSplit').value = 'none';
+    setTripSplitMode('none');
     splitBox.querySelectorAll('input[name="tripTxnSplitMember"]').forEach(cb => { cb.checked = false; });
     toggleSplitMembers();
   }
@@ -3178,13 +3187,15 @@ function saveTripTxn(e) {
   if (!(amount > 0)) { setErr('errTripTxnAmount', '請輸入大於 0 的金額'); ok = false; }
   if (!date) { setErr('errTripTxnDate', '請選擇日期'); ok = false; }
   if (!ok) return;
-  const splitMode = $('#tripTxnSplit').value === 'equal' ? 'equal' : 'none';
+  const splitMode = getTripSplitMode() === 'equal' ? 'equal' : 'none';
   // 分擔成員：收集勾選的 member ID（可多選；一個都沒勾則退回全體團員）
   let splitMemberIds = [...$('#tripTxnSplitMembers').querySelectorAll('input[name="tripTxnSplitMember"]:checked')].map(cb => cb.value);
   if (splitMode === 'equal' && splitMemberIds.length === 0) splitMemberIds = (trip.memberIds || []).slice();
   const shares = splitMode === 'equal' ? splitMemberIds.map(id => ({ memberId: id })) : [];
   // 付款人：收集所有勾選的 member ID（陣列）
   const paidByArr = [...$('#tripTxnPaidBy').querySelectorAll('input[name="tripTxnPayer"]:checked')].map(cb => cb.value);
+  if (!paidByArr.length) { setErr('errTripTxnPaidBy', '請至少選擇一位付款人'); ok = false; }
+  if (!ok) return;
   const payload = {
     type: 'expense',
     amount: Math.round(amount * 100) / 100,

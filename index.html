@@ -759,17 +759,20 @@
           <label class="field">
             <span class="field-label">付款人（誰付錢，可多選）</span>
             <div id="tripTxnPaidBy" class="checkbox-group"></div>
+            <small class="hint">可勾選多人合付，金額由付款人平分</small>
+            <small class="err" id="errTripTxnPaidBy"></small>
           </label>
           <label class="field">
             <span class="field-label">分擔方式</span>
-            <select id="tripTxnSplit">
-              <option value="none">不分擔（付款人全額）</option>
-              <option value="equal">均分（自選成員）</option>
-            </select>
+            <div class="seg-tabs" id="tripTxnSplit" role="group">
+              <button type="button" class="seg" data-split="none">不分擔</button>
+              <button type="button" class="seg" data-split="equal">均分（自選成員）</button>
+            </div>
           </label>
           <label class="field" id="tripTxnSplitMembersField" hidden>
             <span class="field-label">分擔成員（可多選）</span>
             <div id="tripTxnSplitMembers" class="checkbox-group"></div>
+            <small class="hint">未勾選則由全體團員均分</small>
           </label>
           <label class="field">
             <span class="field-label">備註</span>
@@ -873,6 +876,6 @@
   <div id="srStatus" class="sr-only" role="status" aria-live="polite"></div>
 
   <script src="js/cloud.yu-v3.57.js?v=yu-v3.57"></script>
-  <script src="js/app.yu-v3.67.js?v=yu-v3.67"></script>
+  <script src="js/app.yu-v3.68.js?v=yu-v3.68"></script>
 </body>
 </html>
