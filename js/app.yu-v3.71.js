@@ -110,7 +110,7 @@ const CHART_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#f59e0b', '#8b5cf6', '#0
 function cssVar(name, fallback) { const v = getComputedStyle(document.body).getPropertyValue(name); return v ? v.trim() : (fallback || ''); }
 
 /* ---------- 版本資訊 ---------- */
-const APP_VERSION = 'yu-v3.70';
+const APP_VERSION = 'yu-v3.71';
 const APP_BUILD_DATE = '2026-08-29';
 // 暴露給原生 APP（TWA）讀取，使頁尾版本號隨網頁自動更新
 window.APP_VERSION = APP_VERSION;
@@ -2963,6 +2963,36 @@ function settleDebts(rows) {
   return out;
 }
 
+// v3.71：旅程每日花費（依旅程幣別換算後，按日期分組）
+function buildTripDaily(trip, tcur) {
+  const map = {};
+  (trip.txns || []).filter(t => t.type === 'expense').forEach(t => {
+    const d = t.date || '';
+    if (!d) return;
+    map[d] = (map[d] || 0) + tripConvert(t.amount, t.currency, tcur, trip.rates);
+  });
+  return Object.keys(map).sort().map(d => ({ label: d.slice(5), value: Math.round(map[d] * 100) / 100 }));
+}
+
+// v3.71：複製「誰該付給誰」結算清單到剪貼簿，方便貼到群組結帳
+async function copyTripSettle(trip, tcur, debts) {
+  if (!debts || !debts.length) return;
+  const text = ['【' + trip.name + ' 結算清單】']
+    .concat(debts.map(d => d.from + ' → ' + d.to + '：' + fmtMoneyCur(d.amt, tcur)))
+    .join('\n');
+  try {
+    await navigator.clipboard.writeText(text);
+    toast('結算清單已複製，可貼到群組 💬');
+  } catch (e) {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); toast('結算清單已複製 💬'); }
+    catch (_) { toast('複製失敗，請手動選取'); }
+    document.body.removeChild(ta);
+  }
+}
+
 function renderTrips() {
   const listWrap = $('#tripsListWrap'), detailWrap = $('#tripDetailWrap');
   if (tripDetailId && !DB.trips.find(t => t.id === tripDetailId)) tripDetailId = null;
@@ -3050,7 +3080,12 @@ function renderTripDetail(id) {
       <div id="tripCatLegend" class="legend"></div>
     </div>
     <div class="card">
-      <div class="card-head"><h2>👥 團員結算</h2></div>
+      <div class="card-head"><h2>📅 每日花費</h2></div>
+      <canvas id="tripDayBars" height="220"></canvas>
+      <div id="tripDayEmpty" class="empty" hidden>尚無支出紀錄</div>
+    </div>
+    <div class="card">
+      <div class="card-head"><h2>👥 團員結算</h2>${debts.length ? '<button class="ghost-btn small" id="copyTripSettleBtn" type="button">複製清單</button>' : ''}</div>
       ${settle.rows.length ? `
       <div class="settle-list">
         ${settle.rows.map(r => {
@@ -3075,10 +3110,17 @@ function renderTripDetail(id) {
   setTimeout(() => {
     const c = $('#tripCatDoughnut');
     if (c) drawDoughnut(c, catData, $('#tripCatLegend'), { emptyText: '尚無支出' });
+    const dayC = $('#tripDayBars');
+    if (dayC) {
+      const dayData = buildTripDaily(trip, tcur);
+      if (dayData.length) drawBars(dayC, dayData);
+      else { dayC.style.display = 'none'; const e = $('#tripDayEmpty'); if (e) e.hidden = false; }
+    }
   }, 0);
   const back = $('#tripBackBtn'); if (back) back.addEventListener('click', () => { tripDetailId = null; renderTrips(); });
   const edit = $('#tripEditBtn'); if (edit) edit.addEventListener('click', () => openTripModal(id));
   const addT = $('#addTripTxnBtn'); if (addT) addT.addEventListener('click', () => openTripTxnModal(id));
+  const copyBtn = $('#copyTripSettleBtn'); if (copyBtn) copyBtn.addEventListener('click', () => copyTripSettle(trip, tcur, debts));
   const txnList = wrap.querySelector('.txn-list');
   if (txnList) txnList.addEventListener('click', e => {
     const item = e.target.closest('[data-ttxn]');
