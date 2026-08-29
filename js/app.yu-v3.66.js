@@ -110,7 +110,7 @@ const CHART_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#f59e0b', '#8b5cf6', '#0
 function cssVar(name, fallback) { const v = getComputedStyle(document.body).getPropertyValue(name); return v ? v.trim() : (fallback || ''); }
 
 /* ---------- 版本資訊 ---------- */
-const APP_VERSION = 'yu-v3.65';
+const APP_VERSION = 'yu-v3.66';
 const APP_BUILD_DATE = '2026-08-29';
 // 暴露給原生 APP（TWA）讀取，使頁尾版本號隨網頁自動更新
 window.APP_VERSION = APP_VERSION;
@@ -3109,6 +3109,21 @@ function openTripTxnModal(tripId, txnId) {
       `<label class="member-chip"><input type="checkbox" name="tripTxnPayer" value="${m.id}" /> ${escapeHtml(m.name)}</label>`
     ).join('');
   }
+  // 分擔成員（可多選）：限本旅程成員
+  const splitBox = $('#tripTxnSplitMembers');
+  if (!members.length) {
+    splitBox.innerHTML = '<small class="hint">尚無成員，請先到旅程設定新增團員</small>';
+  } else {
+    splitBox.innerHTML = members.map(m =>
+      `<label class="member-chip"><input type="checkbox" name="tripTxnSplitMember" value="${m.id}" /> ${escapeHtml(m.name)}</label>`
+    ).join('');
+  }
+  // 切換「分擔方式」時顯示/隱藏分擔成員
+  const toggleSplitMembers = () => {
+    const on = $('#tripTxnSplit').value === 'equal';
+    $('#tripTxnSplitMembersField').hidden = !on || !members.length;
+  };
+  $('#tripTxnSplit').onchange = toggleSplitMembers;
   fillCurrencySelect($('#tripTxnCurrency'), trip.currency || DB.settings.currency);
   fillCategorySelect($('#tripTxnCategory'), 'expense', '');
   if (txnId) {
@@ -3125,6 +3140,13 @@ function openTripTxnModal(tripId, txnId) {
       cb.checked = existingPayers.includes(cb.value);
     });
     $('#tripTxnSplit').value = (t.splitMode && t.splitMode !== 'none') ? 'equal' : 'none';
+    // 分擔成員：勾選已有值（相容舊資料全員均分）
+    const existingSplit = (t.splitMode && t.splitMode !== 'none' && Array.isArray(t.shares))
+      ? t.shares.map(s => s.memberId) : [];
+    splitBox.querySelectorAll('input[name="tripTxnSplitMember"]').forEach(cb => {
+      cb.checked = existingSplit.length ? existingSplit.includes(cb.value) : true;
+    });
+    toggleSplitMembers();
   } else {
     $('#tripTxnAmount').value = '';
     $('#tripTxnDate').value = todayISO();
@@ -3132,6 +3154,8 @@ function openTripTxnModal(tripId, txnId) {
     // 新增時預設不勾選任何付款人（讓使用者自己選）
     paidByBox.querySelectorAll('input[name="tripTxnPayer"]').forEach(cb => { cb.checked = false; });
     $('#tripTxnSplit').value = 'none';
+    splitBox.querySelectorAll('input[name="tripTxnSplitMember"]').forEach(cb => { cb.checked = false; });
+    toggleSplitMembers();
   }
   modal.hidden = false;
 }
@@ -3146,7 +3170,10 @@ function saveTripTxn(e) {
   if (!date) { setErr('errTripTxnDate', '請選擇日期'); ok = false; }
   if (!ok) return;
   const splitMode = $('#tripTxnSplit').value === 'equal' ? 'equal' : 'none';
-  const shares = splitMode === 'equal' ? (trip.memberIds || []).map(id => ({ memberId: id })) : [];
+  // 分擔成員：收集勾選的 member ID（可多選；一個都沒勾則退回全體團員）
+  let splitMemberIds = [...$('#tripTxnSplitMembers').querySelectorAll('input[name="tripTxnSplitMember"]:checked')].map(cb => cb.value);
+  if (splitMode === 'equal' && splitMemberIds.length === 0) splitMemberIds = (trip.memberIds || []).slice();
+  const shares = splitMode === 'equal' ? splitMemberIds.map(id => ({ memberId: id })) : [];
   // 付款人：收集所有勾選的 member ID（陣列）
   const paidByArr = [...$('#tripTxnPaidBy').querySelectorAll('input[name="tripTxnPayer"]:checked')].map(cb => cb.value);
   const payload = {
