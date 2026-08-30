@@ -955,7 +955,11 @@ body[data-theme="dark"] .skeleton::after { background: linear-gradient(90deg, tr
 /* v3.81：勾選符號改由 .tick 子元素呈現，勿用 textContent 覆寫（會把 input 一起幹掉） */
 .pick-box .tick { display: none; font-size: 13px; line-height: 1; color: #fff; }
 .pick-box.on .tick, .pick-box.done .tick { display: block; }
-.pick-box.done { background: var(--success, #16a34a); border-color: var(--success, #16a34a); cursor: default; }
+.pick-box.done { background: var(--success, #16a34a); border-color: var(--success, #16a34a); }
+/* v3.82：已結算的綠勾改成可按的按鈕（點一下＝取消該成員結算） */
+button.pick-box { padding: 0; appearance: none; -webkit-appearance: none; font-family: inherit; cursor: pointer; }
+button.pick-box.done:hover { filter: brightness(1.08); }
+.since-hint { font-size: 11px; color: var(--text-2); opacity: .85; }
 .pick-box:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .settled-badge {
   display: inline-block; margin-left: 6px; padding: 1px 7px;

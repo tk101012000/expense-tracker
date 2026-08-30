@@ -110,7 +110,7 @@ const CHART_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#f59e0b', '#8b5cf6', '#0
 function cssVar(name, fallback) { const v = getComputedStyle(document.body).getPropertyValue(name); return v ? v.trim() : (fallback || ''); }
 
 /* ---------- 版本資訊 ---------- */
-const APP_VERSION = 'yu-v3.81';
+const APP_VERSION = 'yu-v3.82';
 const APP_BUILD_DATE = '2026-08-30';
 // 暴露給原生 APP（TWA）讀取，使頁尾版本號隨網頁自動更新
 window.APP_VERSION = APP_VERSION;
@@ -1791,29 +1791,56 @@ function payInRange(dateStr, period) {
 }
 
 // 收集並結算所有「有分擔」的項目（記帳 + 繳費）
+// v3.82：結算起算時間顯示（M/D HH:mm）
+function fmtSince(ts) {
+  const d = new Date(Number(ts));
+  if (Number.isNaN(d.getTime())) return '';
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getMonth() + 1}/${d.getDate()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+// v3.82：結算＝「結清起點」。成員標記已結算時記下時間戳（DB.paySettleSince[成員id]），
+// 之後只計算「該時間點之後」的記帳；結算點之前的舊帳不再重算，新記帳從 0 開始累積。
 function computePaySettle(period) {
   const items = [];
-  DB.txns.forEach(t => {
-    if (t.splitMode && t.splitMode !== 'none' && Array.isArray(t.shares) && t.shares.length) {
-      if (payInRange(t.date, period)) items.push({ total: Number(t.amount) || 0, paidBy: t.paidBy || '', mode: t.splitMode, shares: t.shares });
-    }
-  });
-  DB.bills.forEach(b => {
-    if (b.splitMode && b.splitMode !== 'none' && Array.isArray(b.shares) && b.shares.length) {
-      if (payInRange(b.dueDate, period)) items.push({ total: Number(b.amount) || 0, paidBy: b.paidBy || '', mode: b.splitMode, shares: b.shares });
-    }
-  });
+  const push = (src, dateVal) => {
+    // 單筆已標記「已結算」（v3.79 記帳編輯頁開關 / 主清單批次）→ 整筆不再計入結算
+    if (src.settled) return;
+    if (!src.splitMode || src.splitMode === 'none' || !Array.isArray(src.shares) || !src.shares.length) return;
+    if (!payInRange(dateVal, period)) return;
+    const c = Number(src.createdAt);
+    const parsed = Date.parse(String(dateVal || '') + 'T00:00:00');
+    const ts = c || (Number.isNaN(parsed) ? 0 : parsed);
+    items.push({ total: Number(src.amount) || 0, paidBy: src.paidBy || '', mode: src.splitMode, shares: src.shares, ts });
+  };
+  DB.txns.forEach(t => push(t, t.date));
+  DB.bills.forEach(b => push(b, b.dueDate));
   if (!items.length) return null;
+
+  const since = DB.paySettleSince || {};
+  // 該成員在 ts 這個時間點「尚未結算」→ 要計入
+  const fresh = (mid, ts) => { const s = Number(since[mid]); return !s || ts > s; };
+
   const map = new Map();
   DB.members.forEach(m => map.set(m.id, { id: m.id, name: m.name, payable: 0, paid: 0 }));
   let grand = 0, itemCount = 0;
   items.forEach(it => {
     const amts = computeSplitAmounts(it.total, it.mode, it.shares);
-    grand += it.total; itemCount++;
-    amts.forEach(a => { if (a.memberId && map.has(a.memberId)) map.get(a.memberId).payable += a.amount; });
-    if (it.paidBy && map.has(it.paidBy)) map.get(it.paidBy).paid += it.total;
+    let counted = false;
+    amts.forEach(a => {
+      if (!a.memberId || !map.has(a.memberId)) return;
+      if (!fresh(a.memberId, it.ts)) return;
+      map.get(a.memberId).payable += a.amount;
+      counted = true;
+    });
+    if (it.paidBy && map.has(it.paidBy) && fresh(it.paidBy, it.ts)) {
+      map.get(it.paidBy).paid += it.total;
+      counted = true;
+    }
+    if (counted) { grand += it.total; itemCount++; }
   });
-  const rows = [...map.values()].filter(r => r.payable > 0 || r.paid > 0);
+  // 已結算成員即使歸零也要保留在列（否則無法取消結算）
+  const rows = [...map.values()].filter(r => r.payable > 0 || r.paid > 0 || Number(since[r.id]) > 0);
   rows.sort((a, b) => (b.paid - b.payable) - (a.paid - a.payable)); // 依淨額排序（應收→應付）
   return { rows, grand, itemCount };
 }
@@ -1837,8 +1864,10 @@ function renderPaySettle() {
     const netTxt = net > 0 ? `應收 ${fmtMoney(net)}` : (net < 0 ? `應付 ${fmtMoney(-net)}` : '已兩清');
     const isSet = settledSet.has(r.id);
     const isPicked = pickedSet.has(r.id);
+    const sinceTs = Number((DB.paySettleSince || {})[r.id]) || 0;
+    const sinceTxt = sinceTs ? fmtSince(sinceTs) : '';
     const box = isSet
-      ? `<span class="pick-box done"><span class="tick">✓</span></span>`
+      ? `<button type="button" class="pick-box done" data-punsettle="${escapeHtml(r.id)}" title="點擊取消 ${escapeHtml(r.name)} 的結算標記（會把結算前的舊帳加回計算）"><span class="tick">✓</span></button>`
       : `<label class="pick-box${isPicked ? ' on' : ''}"><input type="checkbox" data-ppick="${escapeHtml(r.id)}"${isPicked ? ' checked' : ''}/><span class="tick">✓</span></label>`;
     return `<div class="pay-row settle-pick${isSet ? ' is-settled' : ''}">
       ${box}
@@ -1851,6 +1880,7 @@ function renderPaySettle() {
           <span>應付 ${fmtMoney(Math.round(r.payable * 100) / 100)}</span>
           <span class="dot">·</span>
           <span>已付 ${fmtMoney(Math.round(r.paid * 100) / 100)}</span>
+          ${sinceTxt ? `<span class="dot">·</span><span class="since-hint">${sinceTxt}起重新計算</span>` : ''}
         </div>
       </div>
     </div>`;
@@ -1923,6 +1953,17 @@ function wirePaySettle() {
       cb.checked = pickedSet.has(mid);
       refreshBar();
     });
+    // v3.82：點綠色勾可單獨取消該成員的結算（結算前的舊帳會加回計算）
+    el.addEventListener('click', e => {
+      const btn = e.target.closest('[data-punsettle]');
+      if (!btn) return;
+      const mid = btn.dataset.punsettle;
+      DB.paySettled = (DB.paySettled || []).filter(x => x !== mid);
+      if (DB.paySettleSince) delete DB.paySettleSince[mid];
+      save();
+      renderPaySettle();
+      toast('已取消結算標記，結算前的帳目已加回計算');
+    });
     el.__payWired = true;
   }
 
@@ -1930,18 +1971,21 @@ function wirePaySettle() {
     const n = pickedSet.size;
     if (!n) { toast('請先勾選成員'); return; }
     const set = new Set(DB.paySettled || []);
-    pickedSet.forEach(m => set.add(m));
+    const since = DB.paySettleSince || (DB.paySettleSince = {});
+    const now = Date.now();
+    pickedSet.forEach(m => { set.add(m); since[m] = now; });
     DB.paySettled = [...set];
     save();
     pickedSet.clear();
     renderPaySettle();
-    toast('已標記 ' + n + ' 位為已結算');
+    toast('已結算 ' + n + ' 位 · 之後新增的記帳從 0 重新計算');
   };
   resetBtn.onclick = () => {
     DB.paySettled = [];
+    DB.paySettleSince = {};
     save();
     renderPaySettle();
-    toast('已取消全部結算標記');
+    toast('已取消全部結算標記，恢復計算全部帳目');
   };
   refreshBar();
 }
