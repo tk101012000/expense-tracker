@@ -385,11 +385,68 @@ Tab 順序：總覽 → 記帳 → 繳費 → **＋(FAB)** → 繳費統計 → 
 
 ---
 
-## 13. 版本對應
+## 13. 品牌圖示（App Icon）
+
+### 13.1 兩套獨立資產（最常見的誤區）
+
+| | 網頁 PWA 圖示 | APK 桌面圖示 |
+|---|---|---|
+| 檔案 | `icons/icon-192.png`、`icon-512.png`、`icon-maskable-512.png` | `res/mipmap-*/ic_launcher.png` + `ic_launcher_round.png` |
+| 參照者 | `manifest.json` | `AndroidManifest.xml` 的 `@mipmap/ic_launcher` |
+| 誰會看到 | 瀏覽器分頁、加入主畫面、Windows 安裝的 PWA | 手機桌面、應用程式清單、設定頁 |
+
+**改一邊不會動另一邊。** 打包 APK 前一律先跑 §13.4 的腳本重產桌面圖示，
+否則會一直用到 `decoded/` 內的舊圖（2026-08-30 實際踩過：網頁早已是熊貓，
+APK 桌面圖示卻從原始版本就沒變過）。
+
+### 13.2 主視覺：熊貓
+
+品牌主視覺是一隻**熊貓玩偶照片**（`icons/icon-512.png`，512×512，v3.50 起使用）。
+
+### 13.3 構圖規格（勿任意改動）
+
+來源圖是**真實照片**：RGB、無 alpha，四角為雜亂的拍攝背景
+（左上 `#7a7a5e`、右上 `#764e20`、左下 `#040406`、右下 `#968a72`）。
+**整張滿版當桌面圖示，各家 Android 遮罩裁切後會露出那圈雜訊。**
+
+本專案沒有 `mipmap-anydpi-v26/`，走 legacy PNG 路徑——Android 8+ 會直接拿 PNG 套遮罩，
+因此構圖必須「滿版可裁」：
+
+| 元素 | 規格 | 理由 |
+|---|---|---|
+| 底色 | 品牌藍 `#2563eb` 滿版 | 與 §2.2 品牌色、`res/drawable/ic_launcher.xml` 一致；遮罩只會裁到這層 |
+| 主體 | 圓形，直徑 = 圖示 **74%** | 大於 Android adaptive icon 的 66% 安全區 → 任何遮罩都裁不到熊貓 |
+| 描邊 | 白色細環，寬度 **2.8%**，高斯模糊柔邊 | 讓主體從底色浮出，48px（mdpi）小尺寸仍可辨識 |
+
+三種遮罩下的效果（圓形 / 圓角方形 / 水滴）熊貓皆完整，只會裁到藍色邊。
+
+### 13.4 產生方式
+
+```bash
+python tools/build_launcher_icons.py <decoded的res目錄>
+#   來源圖預設 icons/icon-512.png；需 Pillow
+```
+
+產出密度：`mipmap-mdpi` 48 / `hdpi` 72 / `xhdpi` 96 / `xxhdpi` 144 / `xxxhdpi` 192，
+`ic_launcher` 與 `ic_launcher_round` 同步（約 188 KB）。
+
+### 13.5 禁止事項
+
+- ⛔ 不要把來源照片**未經處理**直接放進 `res/mipmap/`（會露出雜亂背景）
+- ⛔ 不要只換 `ic_launcher.png` 而漏掉 `ic_launcher_round.png`（圓形遮罩的 launcher 會仍是舊圖）
+- ⛔ 不要把主體放大超過 74%（會被遮罩裁到）
+- ⛔ 不要改動底色（品牌識別的一部分；改色的話 `manifest.json`、`ic_launcher.xml`、
+  `build_launcher_icons.py` 三處要一起改）
+
+---
+
+## 14. 版本對應
 
 | 版本 | 設計變更 |
 |------|---------|
 | v3.47 | 建立精緻化基礎：slate 色階、四級陰影、細邊框卡片、頂欄漸層、tabbar 藥丸、微動效 |
+| v3.50 | 品牌圖示更換為熊貓（網頁 PWA）；APK 桌面圖示同時手動更換一次 |
+| v3.86 | 補 §13 品牌圖示規範；APK 桌面圖示改為腳本化產生（`tools/build_launcher_icons.py`），確立「品牌藍底 + 74% 圓形熊貓」構圖 |
 | v3.48+ | 本規範之後的修改均應更新此文件 |
 
 ---
