@@ -951,6 +951,10 @@ body[data-theme="dark"] .skeleton::after { background: linear-gradient(90deg, tr
   font-size: 13px; line-height: 1; color: #fff; cursor: pointer; user-select: none;
 }
 .pick-box.on { background: var(--primary); border-color: var(--primary); }
+.pick-box input { display: none; }
+/* v3.81：勾選符號改由 .tick 子元素呈現，勿用 textContent 覆寫（會把 input 一起幹掉） */
+.pick-box .tick { display: none; font-size: 13px; line-height: 1; color: #fff; }
+.pick-box.on .tick, .pick-box.done .tick { display: block; }
 .pick-box.done { background: var(--success, #16a34a); border-color: var(--success, #16a34a); cursor: default; }
 .pick-box:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .settled-badge {

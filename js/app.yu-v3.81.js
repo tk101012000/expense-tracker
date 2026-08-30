@@ -110,7 +110,7 @@ const CHART_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#f59e0b', '#8b5cf6', '#0
 function cssVar(name, fallback) { const v = getComputedStyle(document.body).getPropertyValue(name); return v ? v.trim() : (fallback || ''); }
 
 /* ---------- 版本資訊 ---------- */
-const APP_VERSION = 'yu-v3.78';
+const APP_VERSION = 'yu-v3.81';
 const APP_BUILD_DATE = '2026-08-30';
 // 暴露給原生 APP（TWA）讀取，使頁尾版本號隨網頁自動更新
 window.APP_VERSION = APP_VERSION;
@@ -1302,6 +1302,7 @@ function openTxnModal(id) {
     fillAccountSelect($('#txnAccount'), t.accountId);
     fillMemberSelect($('#txnPaidBy'), t.paidBy, false);
     fillCurrencySelect($('#txnCurrency'), t.currency);
+    $('#txnSettled').checked = !!t.settled;
   } else {
     txnType = 'expense';
     $('#txnAmount').value = '';
@@ -1311,6 +1312,7 @@ function openTxnModal(id) {
     fillAccountSelect($('#txnAccount'), DB.accounts[0] && DB.accounts[0].id);
     fillMemberSelect($('#txnPaidBy'), DB.members[0] ? DB.members[0].id : '', false);
     fillCurrencySelect($('#txnCurrency'), ''); // 預設用全域設定幣別
+    $('#txnSettled').checked = false;
   }
   // 載入分擔狀態（收入不支援分擔，隱藏編輯器）
   splitEditorLoad(txnSplit, id ? DB.txns.find(x => x.id === id) : null);
@@ -1371,6 +1373,7 @@ function saveTxn(e) {
     currency: $('#txnCurrency').value || DB.settings.currency || CURRENCIES[0].code,
     // 收入不支援分擔；支出才帶 splitMode/shares
     ...splitEditorToData(txnSplit, txnType === 'expense'),
+    settled: $('#txnSettled').checked,  // v3.79：單筆記帳直接標記已結算
   };
   if (editTxnId) {
     // #7 修復：find 守衛
@@ -1816,23 +1819,29 @@ function computePaySettle(period) {
 }
 
 // 主渲染：每位成員 應付 / 已付 / 淨結算
+// v3.81：帳戶「每人應付」改為「勾選人員 → 批次標記已結算」多選模式
 function renderPaySettle() {
   const el = $('#paySettle'); if (!el) return;
   const period = $('#payPeriod') ? $('#payPeriod').value : 'all';
   const rangeEl = $('#payRange');
   if (rangeEl) rangeEl.hidden = period !== 'custom';
   const data = computePaySettle(period);
-  if (!data || !data.rows.length) { el.innerHTML = '<div class="empty">尚無多人分擔紀錄</div>'; return; }
+  if (!data || !data.rows.length) { el.innerHTML = '<div class="empty">尚無多人分擔紀錄</div>'; el.__payPicked = new Set(); return; }
   const { rows, itemCount } = data;
   const totalPayable = rows.reduce((s, r) => s + r.payable, 0);
   const settledSet = new Set(DB.paySettled || []);
+  const pickedSet = el.__payPicked || (el.__payPicked = new Set());
   el.innerHTML = rows.map(r => {
     const net = Math.round((r.paid - r.payable) * 100) / 100;
     const netCls = net > 0 ? 'recv' : (net < 0 ? 'owe' : 'even');
     const netTxt = net > 0 ? `應收 ${fmtMoney(net)}` : (net < 0 ? `應付 ${fmtMoney(-net)}` : '已兩清');
     const isSet = settledSet.has(r.id);
+    const isPicked = pickedSet.has(r.id);
+    const box = isSet
+      ? `<span class="pick-box done"><span class="tick">✓</span></span>`
+      : `<label class="pick-box${isPicked ? ' on' : ''}"><input type="checkbox" data-ppick="${escapeHtml(r.id)}"${isPicked ? ' checked' : ''}/><span class="tick">✓</span></label>`;
     return `<div class="pay-row settle-pick${isSet ? ' is-settled' : ''}">
-      <span class="pick-box${isSet ? ' done' : ''}" data-ppick="${escapeHtml(r.id)}" role="checkbox" aria-checked="${isSet}" tabindex="0">${isSet ? '✓' : ''}</span>
+      ${box}
       <div class="pay-main">
         <div class="pay-top">
           <span class="pay-name">${escapeHtml(r.name)}${isSet ? '<span class="settled-badge">已結算</span>' : ''}</span>
@@ -1851,69 +1860,90 @@ function renderPaySettle() {
       <span class="settle-count" id="paySettleCount"></span>
       <span class="settle-bar-btns">
         <button class="ghost-btn small" type="button" id="paySettleAll">全選</button>
-        <button class="ghost-btn small" type="button" id="paySettleNone">取消</button>
+        <button class="primary-btn small" type="button" id="paySettleMark" hidden>標記已結算</button>
         <button class="ghost-btn small" type="button" id="paySettleReset" hidden>取消結算</button>
-        <button class="primary-btn small" type="button" id="paySettleMark">標記已結算</button>
       </span>
     </div>`;
   wirePaySettle();
 }
 
-// v3.77：首頁「每人應付」多選「已結算」批次標記
+// 監聽器只掛一次（el.__payWired），避免重渲染累積；勾選狀態暫存 el.__payPicked
 function wirePaySettle() {
   const el = $('#paySettle');
   const bar = $('#paySettleBar');
   if (!el || !bar) return;
   const cntEl = $('#paySettleCount');
+  const markBtn = $('#paySettleMark');
   const resetBtn = $('#paySettleReset');
-  const picked = new Set();
-  const settledIds = new Set(DB.paySettled || []);
+  const allBtn = $('#paySettleAll');
+  const pickedSet = el.__payPicked || (el.__payPicked = new Set());
 
-  const refresh = () => {
-    el.querySelectorAll('[data-ppick]').forEach(b => {
-      const mid = b.dataset.ppick;
-      const isSet = settledIds.has(mid);
-      b.classList.toggle('done', isSet);
-      b.classList.toggle('on', !isSet && picked.has(mid));
-      b.textContent = isSet ? '✓' : '';
+  const boxes = () => [...el.querySelectorAll('[data-ppick]')];
+
+  const refreshBar = () => {
+    const settledSet = new Set(DB.paySettled || []);
+    // 只切 class，勿用 textContent（會連 input 一起移除）
+    boxes().forEach(cb => {
+      const wrap = cb.closest('.pick-box');
+      if (wrap) wrap.classList.toggle('on', pickedSet.has(cb.dataset.ppick));
     });
-    const n = picked.size, s = settledIds.size;
-    bar.hidden = !(n || s);
+    const n = pickedSet.size;
+    const s = settledSet.size;
+    const pickable = boxes().length;
+    // 有成員就常駐顯示（這是「選擇人員」的入口，藏起來會找不到）
+    bar.hidden = !pickable;
     const parts = [];
     if (n) parts.push('已選 ' + n + ' 位');
     if (s) parts.push('已結算 ' + s + ' 位');
-    cntEl.textContent = parts.join(' · ');
+    cntEl.textContent = parts.join(' · ') || '勾選成員後可批次標記已結算';
+    markBtn.hidden = !n;
     resetBtn.hidden = !s;
+    allBtn.hidden = !pickable;
+    allBtn.textContent = (pickable && n >= pickable) ? '取消全選' : '全選';
   };
 
-  el.addEventListener('click', e => {
-    const box = e.target.closest('[data-ppick]');
-    if (!box) return;
-    const mid = box.dataset.ppick;
-    if (settledIds.has(mid)) return;
-    if (picked.has(mid)) picked.delete(mid); else picked.add(mid);
-    refresh();
-  });
-
-  $('#paySettleAll').onclick = () => {
-    el.querySelectorAll('[data-ppick]').forEach(b => { if (!settledIds.has(b.dataset.ppick)) picked.add(b.dataset.ppick); });
-    refresh();
+  allBtn.onclick = () => {
+    const list = boxes();
+    if (!list.length) return;
+    const allPicked = list.every(cb => pickedSet.has(cb.dataset.ppick));
+    list.forEach(cb => {
+      const mid = cb.dataset.ppick;
+      if (allPicked) { pickedSet.delete(mid); cb.checked = false; }
+      else { pickedSet.add(mid); cb.checked = true; }
+    });
+    refreshBar();
   };
-  $('#paySettleNone').onclick = () => { picked.clear(); refresh(); };
+
+  if (!el.__payWired) {
+    el.addEventListener('change', e => {
+      const cb = e.target.closest('[data-ppick]');
+      if (!cb || cb.disabled) return;
+      const mid = cb.dataset.ppick;
+      if (pickedSet.has(mid)) pickedSet.delete(mid); else pickedSet.add(mid);
+      cb.checked = pickedSet.has(mid);
+      refreshBar();
+    });
+    el.__payWired = true;
+  }
+
+  markBtn.onclick = () => {
+    const n = pickedSet.size;
+    if (!n) { toast('請先勾選成員'); return; }
+    const set = new Set(DB.paySettled || []);
+    pickedSet.forEach(m => set.add(m));
+    DB.paySettled = [...set];
+    save();
+    pickedSet.clear();
+    renderPaySettle();
+    toast('已標記 ' + n + ' 位為已結算');
+  };
   resetBtn.onclick = () => {
     DB.paySettled = [];
     save();
     renderPaySettle();
     toast('已取消全部結算標記');
   };
-  $('#paySettleMark').onclick = () => {
-    if (!picked.size) { toast('請先勾選成員'); return; }
-    DB.paySettled = [...new Set([...(DB.paySettled || []), ...picked])];
-    save();
-    toast('已標記 ' + picked.size + ' 位為已結算');
-    renderPaySettle();
-  };
-  refresh();
+  refreshBar();
 }
 
 // 匯出每人應付（分擔結算）報表（CSV）
