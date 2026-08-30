@@ -110,8 +110,8 @@ const CHART_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#f59e0b', '#8b5cf6', '#0
 function cssVar(name, fallback) { const v = getComputedStyle(document.body).getPropertyValue(name); return v ? v.trim() : (fallback || ''); }
 
 /* ---------- 版本資訊 ---------- */
-const APP_VERSION = 'yu-v3.73';
-const APP_BUILD_DATE = '2026-08-29';
+const APP_VERSION = 'yu-v3.76';
+const APP_BUILD_DATE = '2026-08-30';
 // 暴露給原生 APP（TWA）讀取，使頁尾版本號隨網頁自動更新
 window.APP_VERSION = APP_VERSION;
 window.APP_BUILD_DATE = APP_BUILD_DATE;
@@ -2703,6 +2703,110 @@ function bindScanEvents() {
   const retry = $('#scanRetryBtn'); if (retry) retry.addEventListener('click', openScan);
 }
 
+// =========================================================
+//  即時擷取螢幕金額（MediaProjection + WebView OCR）  yu-v3.76
+//  原生層以 MediaProjection 抓取螢幕影格 → base64 JPEG
+//  → 呼叫 window.onCaptureFrame → 本機 Tesseract.js OCR
+//  → 解析出金額自動帶入記帳表單後自動停止擷取
+// =========================================================
+let _captureActive = false;
+let _captureBusy = false;
+
+function triggerNativeCapture(action) {
+  const url = 'billingtracker://capture?action=' + action;
+  // 優先走 BKNATIVE 橋接（yu-v3.77+）：與 OAuth 同一條確定能通的通道，
+  // 不依賴 WebView 對 location.href 自訂 scheme 的攔截（舊版 WebView 不觸發）。
+  try {
+    if (window.BKNATIVE && typeof window.BKNATIVE.execCommand === 'function') {
+      window.BKNATIVE.execCommand(url);
+      return;
+    }
+  } catch (_) {}
+  // 舊 APK 相容：隱藏 iframe 比 location.href 更可能觸發 shouldOverrideUrlLoading
+  try {
+    const f = document.createElement('iframe');
+    f.style.display = 'none';
+    f.src = url;
+    (document.body || document.documentElement).appendChild(f);
+    setTimeout(function () { try { document.body.removeChild(f); } catch (e) {} }, 600);
+    return;
+  } catch (_) {}
+  try { location.href = url; } catch (_) {}
+}
+
+function updateCaptureBtn(active) {
+  const btn = $('#captureScreenBtn');
+  if (!btn) return;
+  btn.textContent = active ? '⏹ 停止即時擷取' : '📺 即時擷取螢幕金額';
+  btn.classList.toggle('capturing', !!active);
+}
+
+function startScreenCapture() {
+  if (_captureActive) return;
+  _captureActive = true;
+  const modal = $('#scanModal');
+  if (modal) {
+    modal.hidden = false;
+    $('#scanPreview').removeAttribute('src');
+    $('#scanLoading').hidden = false;
+    $('#scanResult').hidden = true;
+    $('#scanStatus').textContent = '正在啟動螢幕擷取，請授權後切到付款畫面…';
+  }
+  updateCaptureBtn(true);
+  triggerNativeCapture('start');   // 原生層會跳出透明授權 Activity
+}
+
+function stopScreenCapture() {
+  if (!_captureActive && !_captureBusy) { triggerNativeCapture('stop'); updateCaptureBtn(false); }
+  _captureActive = false;
+  triggerNativeCapture('stop');
+  updateCaptureBtn(false);
+  const modal = $('#scanModal');
+  if (modal) modal.hidden = true;
+}
+
+function processCaptureFrame(dataUrl) {
+  return loadTesseract().then(T => T.recognize(dataUrl, 'eng+chi_tra', {
+    logger: p => {
+      if (p.status === 'recognizing text') {
+        const pct = Math.round((p.progress || 0) * 100);
+        const st = $('#scanStatus'); if (st) st.textContent = '即時辨識中… ' + pct + '%';
+      }
+    }
+  })).then(({ data }) => parseReceiptText(data.text || ''));
+}
+
+// 原生層每收到一張影格就呼叫此函式；內部做防重疊 + 自動帶入
+window.onCaptureFrame = function (dataUrl) {
+  if (!_captureActive || _captureBusy || !dataUrl) return;
+  _captureBusy = true;
+  const modal = $('#scanModal');
+  if (modal) {
+    $('#scanPreview').src = dataUrl;
+    modal.hidden = false;
+    $('#scanLoading').hidden = false;
+    $('#scanResult').hidden = true;
+    $('#scanStatus').textContent = '即時辨識中…';
+  }
+  processCaptureFrame(dataUrl).then(parsed => {
+    if (parsed && parsed.amount > 0) {
+      applyScanToTxn();              // 開交易表單並預填金額/日期/店家
+      stopScreenCapture();           // 成功辨識即停止擷取
+      toast('已從螢幕辨識金額並帶入');
+    }
+  }).catch(() => {
+    const st = $('#scanStatus'); if (st) st.textContent = '辨識失敗，持續擷取中…';
+  }).finally(() => { _captureBusy = false; });
+};
+
+function bindCaptureEvents() {
+  const btn = $('#captureScreenBtn');
+  if (btn) btn.addEventListener('click', () => { _captureActive ? stopScreenCapture() : startScreenCapture(); });
+  // 使用者手動關閉掃描彈窗時，一併停止擷取（若正在擷取）
+  const closeBtn = $('[data-close="scanModal"]');
+  if (closeBtn) closeBtn.addEventListener('click', () => { if (_captureActive) stopScreenCapture(); });
+}
+
 function bindEvents() {
   bindTabBarEvents();
   bindTxnEvents();
@@ -2710,6 +2814,7 @@ function bindEvents() {
   bindMemberEvents();
   bindTripsEvents();
   bindScanEvents();
+  bindCaptureEvents();
   bindBillEvents();
   bindListDelegation();
   bindSelEvents();
