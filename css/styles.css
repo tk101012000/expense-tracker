@@ -966,6 +966,8 @@ button.pick-box.done:hover { filter: brightness(1.08); }
   border-radius: 999px; font-size: 11px; font-weight: 600;
   background: var(--success, #16a34a); color: #fff; vertical-align: middle;
 }
+/* v3.84：結清後又產生的新費用（琥珀色，區別於綠色「已結算」） */
+.settled-badge.pending { background: var(--warning, #f59e0b); color: #1f2937; }
 .settle-bar {
   display: flex; align-items: center; gap: 8px; margin-top: 12px;
   padding: 10px 12px; border: 1px solid var(--border);

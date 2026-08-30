@@ -110,7 +110,7 @@ const CHART_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#f59e0b', '#8b5cf6', '#0
 function cssVar(name, fallback) { const v = getComputedStyle(document.body).getPropertyValue(name); return v ? v.trim() : (fallback || ''); }
 
 /* ---------- 版本資訊 ---------- */
-const APP_VERSION = 'yu-v3.83';
+const APP_VERSION = 'yu-v3.84';
 const APP_BUILD_DATE = '2026-08-30';
 // 暴露給原生 APP（TWA）讀取，使頁尾版本號隨網頁自動更新
 window.APP_VERSION = APP_VERSION;
@@ -1880,7 +1880,8 @@ function renderPaySettle() {
   if (rangeEl) rangeEl.hidden = period !== 'custom';
   const data = computePaySettle(period);
   if (!data || !data.rows.length) { el.innerHTML = '<div class="empty">尚無多人分擔紀錄</div>'; el.__payPicked = new Set(); return; }
-  const { rows, itemCount } = data;
+  const { rows, itemCount, keysByMember } = data;
+  const keysMap = keysByMember || {};
   const totalPayable = rows.reduce((s, r) => s + r.payable, 0);
   const settledSet = new Set(DB.paySettled || []);
   const pickedSet = el.__payPicked || (el.__payPicked = new Set());
@@ -1888,10 +1889,16 @@ function renderPaySettle() {
     const net = Math.round((r.paid - r.payable) * 100) / 100;
     const netCls = net > 0 ? 'recv' : (net < 0 ? 'owe' : 'even');
     const netTxt = net > 0 ? `應收 ${fmtMoney(net)}` : (net < 0 ? `應付 ${fmtMoney(-net)}` : '已兩清');
-    const isSet = settledSet.has(r.id);
+    const hasHist = settledSet.has(r.id);                 // 曾經結算過
+    const pending = (keysMap[r.id] || []).length;         // 本輪尚未結清的項目數
+    // v3.84：「已結算」改為動態判定 —— 結清後又有新費用進來，自動變回未勾選、可再次結算
+    const isSet = hasHist && pending === 0;
     const isPicked = pickedSet.has(r.id);
     const sinceTs = Number((DB.paySettleSince || {})[r.id]) || 0;
     const sinceTxt = sinceTs ? fmtSince(sinceTs) : '';
+    const badge = isSet
+      ? '<span class="settled-badge">已結算</span>'
+      : (hasHist && pending ? `<span class="settled-badge pending">新費用 ${pending} 筆</span>` : '');
     const box = isSet
       ? `<button type="button" class="pick-box done" data-punsettle="${escapeHtml(r.id)}" title="點擊取消 ${escapeHtml(r.name)} 的結算標記（會把結算前的舊帳加回計算）"><span class="tick">✓</span></button>`
       : `<label class="pick-box${isPicked ? ' on' : ''}"><input type="checkbox" data-ppick="${escapeHtml(r.id)}"${isPicked ? ' checked' : ''}/><span class="tick">✓</span></label>`;
@@ -1899,7 +1906,7 @@ function renderPaySettle() {
       ${box}
       <div class="pay-main">
         <div class="pay-top">
-          <span class="pay-name">${escapeHtml(r.name)}${isSet ? '<span class="settled-badge">已結算</span>' : ''}</span>
+          <span class="pay-name">${escapeHtml(r.name)}${badge}</span>
           <span class="pay-net ${netCls}">${netTxt}</span>
         </div>
         <div class="pay-detail">
@@ -1946,11 +1953,19 @@ function wirePaySettle() {
     const n = pickedSet.size;
     const s = settledSet.size;
     const pickable = boxes().length;
-    // 有成員就常駐顯示（這是「選擇人員」的入口，藏起來會找不到）
-    bar.hidden = !pickable;
+    // 全部都已結算時也要留著工具列，否則「取消結算」入口會消失
+    bar.hidden = !(pickable || s);
+    // v3.84：結清後又產生新費用的成員數（動態重算，避免用快取的舊狀態）
+    let newCnt = 0;
+    if (s) {
+      const snap = computePaySettle(payPeriodValue());
+      const k = (snap && snap.keysByMember) || {};
+      newCnt = [...settledSet].filter(m => (k[m] || []).length > 0).length;
+    }
     const parts = [];
     if (n) parts.push('已選 ' + n + ' 位');
     if (s) parts.push('已結算 ' + s + ' 位');
+    if (newCnt) parts.push('其中 ' + newCnt + ' 位有新費用');
     cntEl.textContent = parts.join(' · ') || '勾選成員後可批次標記已結算';
     markBtn.hidden = !n;
     resetBtn.hidden = !s;
