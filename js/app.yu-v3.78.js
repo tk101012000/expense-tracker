@@ -110,7 +110,7 @@ const CHART_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#f59e0b', '#8b5cf6', '#0
 function cssVar(name, fallback) { const v = getComputedStyle(document.body).getPropertyValue(name); return v ? v.trim() : (fallback || ''); }
 
 /* ---------- 版本資訊 ---------- */
-const APP_VERSION = 'yu-v3.76';
+const APP_VERSION = 'yu-v3.78';
 const APP_BUILD_DATE = '2026-08-30';
 // 暴露給原生 APP（TWA）讀取，使頁尾版本號隨網頁自動更新
 window.APP_VERSION = APP_VERSION;
@@ -422,11 +422,11 @@ function txnRowHtml(t) {
   const sp = splitText(t);
   const sel = selMode && selType === 'txn';
   const checked = sel && selSet.has(t.id);
-  return `<div class="txn-item ${sel ? 'selectable' : ''} ${checked ? 'selected' : ''}" data-txn="${t.id}" tabindex="0" role="button" aria-label="編輯 ${escapeHtml(t.category)} ${fmtMoneyCur(t.amount, t.currency || '')}">
+  return `<div class="txn-item ${sel ? 'selectable' : ''} ${checked ? 'selected' : ''} ${t.settled ? 'is-settled' : ''}" data-txn="${t.id}" tabindex="0" role="button" aria-label="編輯 ${escapeHtml(t.category)} ${fmtMoneyCur(t.amount, t.currency || '')}">
     ${sel ? `<span class="sel-check ${checked ? 'on' : ''}"></span>` : ''}
     <div class="txn-icon">${icon}</div>
     <div class="txn-main">
-      <div class="txn-cat">${escapeHtml(t.category)}</div>
+      <div class="txn-cat">${escapeHtml(t.category)}${t.settled ? '<span class="settled-badge">已結算</span>' : ''}</div>
       <div class="txn-meta">${fmtDate(t.date)} · ${acc ? escapeHtml(acc.name) : '未知帳戶'}${t.note ? ' · ' + escapeHtml(t.note) : ''}${payerHtml(t)}${sp ? ' · ' + escapeHtml(sp) : ''}</div>
     </div>
     <div class="txn-amount ${t.type}">${t.type === 'income' ? '+' : '-'}${fmtMoneyCur(t.amount, t.currency || '')}${curBadge(t.currency || '')}</div>
@@ -536,7 +536,7 @@ function renderBills() {
       ${sel ? `<span class="sel-check ${checked ? 'on' : ''}"></span>` : ''}
       <div class="txn-icon">${CAT_ICON[b.category] || '📄'}</div>
       <div class="bill-main">
-        <div class="bill-name">${statusIcon}${escapeHtml(b.name)}</div>
+        <div class="bill-name">${statusIcon}${escapeHtml(b.name)}${b.settled ? '<span class="settled-badge">已結算</span>' : ''}</div>
         <div class="bill-sub">${b.cycle ? cycleTxt[b.cycle] : '未設定期'} · ${subDue} · ${acc ? escapeHtml(acc.name) : (b.accountId ? '' : '未指定帳戶')}</div>
         ${splitText(b) ? `<div class="bill-sub" style="color:var(--text-3);margin-top:3px">分擔：${escapeHtml(splitText(b))}</div>` : ''}
         <div style="margin-top:6px">${tag}</div>
@@ -600,6 +600,19 @@ function updateSelBar() {
   $('#selDelete').disabled = selSet.size === 0;
   $('#selAll').textContent = all ? '取消全選' : '全選';
   $('#selAll').dataset.all = all ? '1' : '0';
+  const settleBtn = $('#selSettle'), unsettleBtn = $('#selUnsettle');
+  if (settleBtn) { settleBtn.textContent = `標記已結算 (${selSet.size})`; settleBtn.disabled = selSet.size === 0; }
+  if (unsettleBtn) unsettleBtn.disabled = selSet.size === 0;
+}
+// v3.77：批次標記 / 取消「已結算」（沿用既有 selMode 多選機制）
+function settleSelected(on) {
+  if (selSet.size === 0) return;
+  const list = selType === 'txn' ? DB.txns : DB.bills;
+  let n = 0;
+  list.forEach(it => { if (selSet.has(it.id)) { if (!!it.settled !== !!on) n++; it.settled = !!on; } });
+  save();
+  exitSelMode();
+  toast(n ? (on ? `已標記 ${n} 項為已結算` : `已取消 ${n} 項的結算標記`) : (on ? '所選項目皆已結算' : '所選項目皆未結算'));
 }
 function selectAllToggle() {
   const on = $('#selAll').dataset.all !== '1';
@@ -1812,23 +1825,95 @@ function renderPaySettle() {
   if (!data || !data.rows.length) { el.innerHTML = '<div class="empty">尚無多人分擔紀錄</div>'; return; }
   const { rows, itemCount } = data;
   const totalPayable = rows.reduce((s, r) => s + r.payable, 0);
+  const settledSet = new Set(DB.paySettled || []);
   el.innerHTML = rows.map(r => {
     const net = Math.round((r.paid - r.payable) * 100) / 100;
     const netCls = net > 0 ? 'recv' : (net < 0 ? 'owe' : 'even');
     const netTxt = net > 0 ? `應收 ${fmtMoney(net)}` : (net < 0 ? `應付 ${fmtMoney(-net)}` : '已兩清');
-    return `<div class="pay-row">
-      <div class="pay-top">
-        <span class="pay-name">${escapeHtml(r.name)}</span>
-        <span class="pay-net ${netCls}">${netTxt}</span>
-      </div>
-      <div class="pay-detail">
-        <span>應付 ${fmtMoney(Math.round(r.payable * 100) / 100)}</span>
-        <span class="dot">·</span>
-        <span>已付 ${fmtMoney(Math.round(r.paid * 100) / 100)}</span>
+    const isSet = settledSet.has(r.id);
+    return `<div class="pay-row settle-pick${isSet ? ' is-settled' : ''}">
+      <span class="pick-box${isSet ? ' done' : ''}" data-ppick="${escapeHtml(r.id)}" role="checkbox" aria-checked="${isSet}" tabindex="0">${isSet ? '✓' : ''}</span>
+      <div class="pay-main">
+        <div class="pay-top">
+          <span class="pay-name">${escapeHtml(r.name)}${isSet ? '<span class="settled-badge">已結算</span>' : ''}</span>
+          <span class="pay-net ${netCls}">${netTxt}</span>
+        </div>
+        <div class="pay-detail">
+          <span>應付 ${fmtMoney(Math.round(r.payable * 100) / 100)}</span>
+          <span class="dot">·</span>
+          <span>已付 ${fmtMoney(Math.round(r.paid * 100) / 100)}</span>
+        </div>
       </div>
     </div>`;
   }).join('') +
-    `<div class="pay-total">分擔項目 ${itemCount} 筆 · 應付合計 <strong>${fmtMoney(Math.round(totalPayable * 100) / 100)}</strong></div>`;
+    `<div class="pay-total">分擔項目 ${itemCount} 筆 · 應付合計 <strong>${fmtMoney(Math.round(totalPayable * 100) / 100)}</strong></div>` +
+    `<div class="settle-bar" id="paySettleBar" hidden>
+      <span class="settle-count" id="paySettleCount"></span>
+      <span class="settle-bar-btns">
+        <button class="ghost-btn small" type="button" id="paySettleAll">全選</button>
+        <button class="ghost-btn small" type="button" id="paySettleNone">取消</button>
+        <button class="ghost-btn small" type="button" id="paySettleReset" hidden>取消結算</button>
+        <button class="primary-btn small" type="button" id="paySettleMark">標記已結算</button>
+      </span>
+    </div>`;
+  wirePaySettle();
+}
+
+// v3.77：首頁「每人應付」多選「已結算」批次標記
+function wirePaySettle() {
+  const el = $('#paySettle');
+  const bar = $('#paySettleBar');
+  if (!el || !bar) return;
+  const cntEl = $('#paySettleCount');
+  const resetBtn = $('#paySettleReset');
+  const picked = new Set();
+  const settledIds = new Set(DB.paySettled || []);
+
+  const refresh = () => {
+    el.querySelectorAll('[data-ppick]').forEach(b => {
+      const mid = b.dataset.ppick;
+      const isSet = settledIds.has(mid);
+      b.classList.toggle('done', isSet);
+      b.classList.toggle('on', !isSet && picked.has(mid));
+      b.textContent = isSet ? '✓' : '';
+    });
+    const n = picked.size, s = settledIds.size;
+    bar.hidden = !(n || s);
+    const parts = [];
+    if (n) parts.push('已選 ' + n + ' 位');
+    if (s) parts.push('已結算 ' + s + ' 位');
+    cntEl.textContent = parts.join(' · ');
+    resetBtn.hidden = !s;
+  };
+
+  el.addEventListener('click', e => {
+    const box = e.target.closest('[data-ppick]');
+    if (!box) return;
+    const mid = box.dataset.ppick;
+    if (settledIds.has(mid)) return;
+    if (picked.has(mid)) picked.delete(mid); else picked.add(mid);
+    refresh();
+  });
+
+  $('#paySettleAll').onclick = () => {
+    el.querySelectorAll('[data-ppick]').forEach(b => { if (!settledIds.has(b.dataset.ppick)) picked.add(b.dataset.ppick); });
+    refresh();
+  };
+  $('#paySettleNone').onclick = () => { picked.clear(); refresh(); };
+  resetBtn.onclick = () => {
+    DB.paySettled = [];
+    save();
+    renderPaySettle();
+    toast('已取消全部結算標記');
+  };
+  $('#paySettleMark').onclick = () => {
+    if (!picked.size) { toast('請先勾選成員'); return; }
+    DB.paySettled = [...new Set([...(DB.paySettled || []), ...picked])];
+    save();
+    toast('已標記 ' + picked.size + ' 位為已結算');
+    renderPaySettle();
+  };
+  refresh();
 }
 
 // 匯出每人應付（分擔結算）報表（CSV）
@@ -2447,6 +2532,8 @@ function bindSelEvents() {
   $('#selCancel').addEventListener('click', exitSelMode);
   $('#selAll').addEventListener('click', selectAllToggle);
   $('#selDelete').addEventListener('click', deleteSelected);
+  $('#selSettle').addEventListener('click', () => settleSelected(true));
+  $('#selUnsettle').addEventListener('click', () => settleSelected(false));
 }
 
 /** 彈窗關閉、篩選、統計月份、資料管理、提醒 */
@@ -3047,8 +3134,9 @@ function computeTripSettle(trip) {
       });
     }
   });
+  const settledSet = new Set(trip.settled || []);
   const rows = [...map.values()].filter(r => r.payable > 0 || r.paid > 0)
-    .map(r => ({ ...r, net: Math.round((r.paid - r.payable) * 100) / 100 }));
+    .map(r => ({ ...r, net: Math.round((r.paid - r.payable) * 100) / 100, settled: settledSet.has(r.id) }));
   rows.sort((a, b) => b.net - a.net);
   return { rows, total: Math.round(total * 100) / 100, count };
 }
@@ -3162,7 +3250,7 @@ function renderTripDetail(id) {
   });
   const catData = Object.entries(catMap).map(([name, value]) => ({ name, value: Math.round(value * 100) / 100 }));
   const settle = computeTripSettle(trip);
-  const debts = settleDebts(settle.rows);
+  const debts = settleDebts(settle.rows.filter(r => !r.settled));
   const days = (trip.startDate && trip.endDate) ? `${trip.startDate} ~ ${trip.endDate}` : (trip.startDate || trip.endDate || '未設日期');
   wrap.innerHTML = `
     <div class="trip-detail-head">
@@ -3197,25 +3285,49 @@ function renderTripDetail(id) {
     <div class="card">
       <div class="card-head"><h2>👥 團員結算</h2>${debts.length ? '<button class="ghost-btn small" id="copyTripSettleBtn" type="button">複製清單</button>' : ''}</div>
       ${settle.rows.length ? `
-      <div class="settle-list">
+      <div class="settle-list" id="tripSettleList">
         ${settle.rows.map(r => {
           const net = r.net;
           const cls = net > 0.005 ? 'recv' : (net < -0.005 ? 'owe' : 'even');
           const txt = net > 0.005 ? `應收 ${fmtMoneyCur(net, tcur)}` : (net < -0.005 ? `應付 ${fmtMoneyCur(-net, tcur)}` : '已兩清');
-          return `<div class="pay-row">
-            <div class="pay-top"><span class="pay-name">${escapeHtml(r.name)}</span><span class="pay-net ${cls}">${txt}</span></div>
-            <div class="pay-detail"><span>應付 ${fmtMoneyCur(Math.round(r.payable * 100) / 100, tcur)}</span><span class="dot">·</span><span>已付 ${fmtMoneyCur(Math.round(r.paid * 100) / 100, tcur)}</span></div>
+          const isSet = !!r.settled;
+          return `<div class="pay-row settle-pick${isSet ? ' is-settled' : ''}">
+            <span class="pick-box${isSet ? ' done' : ''}" data-pick="${escapeHtml(r.id)}" role="checkbox" aria-checked="${isSet}" tabindex="0">${isSet ? '✓' : ''}</span>
+            <div class="pay-main">
+              <div class="pay-top"><span class="pay-name">${escapeHtml(r.name)}${isSet ? '<span class="settled-badge">已結算</span>' : ''}</span><span class="pay-net ${cls}">${txt}</span></div>
+              <div class="pay-detail"><span>應付 ${fmtMoneyCur(Math.round(r.payable * 100) / 100, tcur)}</span><span class="dot">·</span><span>已付 ${fmtMoneyCur(Math.round(r.paid * 100) / 100, tcur)}</span></div>
+            </div>
           </div>`;
         }).join('')}
       </div>
       ${debts.length ? `<div class="settle-debts"><div class="settle-debts-title">💸 誰該付給誰</div>${debts.map(d => `<div class="settle-debt-row">${escapeHtml(d.from)} → ${escapeHtml(d.to)} <b>${fmtMoneyCur(d.amt, tcur)}</b></div>`).join('')}</div>` : '<div class="empty">大家已兩清 🎉</div>'}
       ` : '<div class="empty">尚無可結算的花費（請在旅程內「＋ 新增花費」並指定付款人）</div>'}
+      ${settle.rows.length ? `
+      <div class="settle-bar" id="tripSettleBar" hidden>
+        <span class="settle-count" id="tripSettleCount"></span>
+        <span class="settle-bar-btns">
+          <button class="ghost-btn small" type="button" id="tripSettleAll">全選</button>
+          <button class="ghost-btn small" type="button" id="tripSettleNone">取消</button>
+          <button class="ghost-btn small" type="button" id="tripSettleReset" hidden>取消結算</button>
+          <button class="primary-btn small" type="button" id="tripSettleMark">標記已結算</button>
+        </span>
+      </div>` : ''}
     </div>
     <div class="card">
       <div class="card-head"><h2>花費明細（${txns.length} 筆）</h2><button class="primary-btn small" id="addTripTxnBtn" type="button">＋ 新增花費</button></div>
-      <div class="txn-list">
+      <div class="txn-list" id="tripTxnList">
         ${txns.length ? txns.map(t => tripTxnRow(t, tcur)).join('') : '<div class="empty">這趟旅程還沒有花費記錄</div>'}
       </div>
+      ${txns.length ? `
+      <div class="settle-bar" id="tripTxnBar" hidden>
+        <span class="settle-count" id="tripTxnCount"></span>
+        <span class="settle-bar-btns">
+          <button class="ghost-btn small" type="button" id="tripTxnAll">全選</button>
+          <button class="ghost-btn small" type="button" id="tripTxnNone">取消</button>
+          <button class="ghost-btn small" type="button" id="tripTxnUnset" hidden>取消結算</button>
+          <button class="primary-btn small" type="button" id="tripTxnMark">標記已結算</button>
+        </span>
+      </div>` : ''}
     </div>`;
   setTimeout(() => {
     const c = $('#tripCatDoughnut');
@@ -3231,14 +3343,139 @@ function renderTripDetail(id) {
   const edit = $('#tripEditBtn'); if (edit) edit.addEventListener('click', () => openTripModal(id));
   const addT = $('#addTripTxnBtn'); if (addT) addT.addEventListener('click', () => openTripTxnModal(id));
   const copyBtn = $('#copyTripSettleBtn'); if (copyBtn) copyBtn.addEventListener('click', () => copyTripSettle(trip, tcur, debts));
-  const txnList = wrap.querySelector('.txn-list');
+  wireTripSettle(wrap, trip, id);
+  wireTripTxnSettle(wrap, trip, id);
+  const txnList = wrap.querySelector('#tripTxnList');
   if (txnList) txnList.addEventListener('click', e => {
+    if (e.target.closest('[data-tpick]')) return;
     const item = e.target.closest('[data-ttxn]');
     if (!item) return;
     const tid = item.dataset.ttxn;
     if (e.target.closest('[data-del-ttxn]')) { deleteTripTxn(id, tid); return; }
     openTripTxnModal(id, tid);
   });
+}
+
+/* ---------- v3.77：團員結算多選「已結算」批次標記 ---------- */
+function wireTripSettle(wrap, trip, tripId) {
+  const list = wrap.querySelector('#tripSettleList');
+  const bar = wrap.querySelector('#tripSettleBar');
+  if (!list || !bar) return;
+  const cntEl = wrap.querySelector('#tripSettleCount');
+  const resetBtn = wrap.querySelector('#tripSettleReset');
+  const picked = new Set();
+  const settledIds = new Set(trip.settled || []);
+
+  const refresh = () => {
+    list.querySelectorAll('[data-pick]').forEach(b => {
+      const mid = b.dataset.pick;
+      const isSet = settledIds.has(mid);
+      b.classList.toggle('done', isSet);
+      b.classList.toggle('on', !isSet && picked.has(mid));
+      b.textContent = isSet ? '✓' : '';
+    });
+    const n = picked.size, s = settledIds.size;
+    bar.hidden = !(n || s);
+    const parts = [];
+    if (n) parts.push('已選 ' + n + ' 位');
+    if (s) parts.push('已結算 ' + s + ' 位');
+    cntEl.textContent = parts.join(' · ');
+    resetBtn.hidden = !s;
+  };
+
+  list.addEventListener('click', e => {
+    const box = e.target.closest('[data-pick]');
+    if (!box) return;
+    const mid = box.dataset.pick;
+    if (settledIds.has(mid)) return;
+    if (picked.has(mid)) picked.delete(mid); else picked.add(mid);
+    refresh();
+  });
+
+  const allBtn = wrap.querySelector('#tripSettleAll');
+  const noneBtn = wrap.querySelector('#tripSettleNone');
+  const markBtn = wrap.querySelector('#tripSettleMark');
+  if (allBtn) allBtn.onclick = () => {
+    list.querySelectorAll('[data-pick]').forEach(b => { if (!settledIds.has(b.dataset.pick)) picked.add(b.dataset.pick); });
+    refresh();
+  };
+  if (noneBtn) noneBtn.onclick = () => { picked.clear(); refresh(); };
+  if (resetBtn) resetBtn.onclick = () => {
+    trip.settled = [];
+    save();
+    renderTripDetail(tripId);
+    toast('已取消全部結算標記');
+  };
+  if (markBtn) markBtn.onclick = () => {
+    if (!picked.size) { toast('請先勾選成員'); return; }
+    trip.settled = [...new Set([...(trip.settled || []), ...picked])];
+    save();
+    toast('已標記 ' + picked.size + ' 位為已結算');
+    renderTripDetail(tripId);
+  };
+  refresh();
+}
+
+/* ---------- v3.77：旅程花費明細多選「已結算」批次標記 ---------- */
+function wireTripTxnSettle(wrap, trip, tripId) {
+  const list = wrap.querySelector('#tripTxnList');
+  const bar = wrap.querySelector('#tripTxnBar');
+  if (!list || !bar) return;
+  const cntEl = wrap.querySelector('#tripTxnCount');
+  const unsetBtn = wrap.querySelector('#tripTxnUnset');
+  const picked = new Set();
+  const findTxn = tid => (trip.txns || []).find(x => x.id === tid);
+  const isSettled = tid => { const t = findTxn(tid); return !!(t && t.settled); };
+  const settledCount = () => (trip.txns || []).filter(t => t.settled).length;
+
+  const refresh = () => {
+    list.querySelectorAll('[data-tpick]').forEach(b => {
+      const tid = b.dataset.tpick;
+      const isSet = isSettled(tid);
+      b.classList.toggle('done', isSet);
+      b.classList.toggle('on', !isSet && picked.has(tid));
+      b.textContent = isSet ? '✓' : '';
+    });
+    const n = picked.size, s = settledCount();
+    bar.hidden = !(n || s);
+    const parts = [];
+    if (n) parts.push('已選 ' + n + ' 筆');
+    if (s) parts.push('已結算 ' + s + ' 筆');
+    cntEl.textContent = parts.join(' · ');
+    unsetBtn.hidden = !s;
+  };
+
+  list.addEventListener('click', e => {
+    const box = e.target.closest('[data-tpick]');
+    if (!box) return;
+    const tid = box.dataset.tpick;
+    if (isSettled(tid)) return;
+    if (picked.has(tid)) picked.delete(tid); else picked.add(tid);
+    refresh();
+  });
+
+  const allBtn = wrap.querySelector('#tripTxnAll');
+  const noneBtn = wrap.querySelector('#tripTxnNone');
+  const markBtn = wrap.querySelector('#tripTxnMark');
+  if (allBtn) allBtn.onclick = () => {
+    list.querySelectorAll('[data-tpick]').forEach(b => { if (!isSettled(b.dataset.tpick)) picked.add(b.dataset.tpick); });
+    refresh();
+  };
+  if (noneBtn) noneBtn.onclick = () => { picked.clear(); refresh(); };
+  if (unsetBtn) unsetBtn.onclick = () => {
+    (trip.txns || []).forEach(t => { t.settled = false; });
+    save();
+    renderTripDetail(tripId);
+    toast('已取消全部花費結算標記');
+  };
+  if (markBtn) markBtn.onclick = () => {
+    if (!picked.size) { toast('請先勾選花費'); return; }
+    (trip.txns || []).forEach(t => { if (picked.has(t.id)) t.settled = true; });
+    save();
+    toast('已標記 ' + picked.size + ' 筆為已結算');
+    renderTripDetail(tripId);
+  };
+  refresh();
 }
 
 function tripTxnRow(t, tcur) {
@@ -3248,10 +3485,12 @@ function tripTxnRow(t, tcur) {
   const payerIds = Array.isArray(t.paidBy) ? t.paidBy : (t.paidBy ? [t.paidBy] : []);
   const payerNames = payerIds.map(id => { const m = DB.members.find(x => x.id === id); return m ? m.name : id; });
   const payerStr = payerNames.length ? '付：' + payerNames.join('、') : '';
-  return `<div class="txn-item" data-ttxn="${t.id}">
+  const isSet = !!t.settled;
+  return `<div class="txn-item${isSet ? ' is-settled' : ''}" data-ttxn="${t.id}">
+    <span class="pick-box${isSet ? ' done' : ''}" data-tpick="${t.id}" role="checkbox" aria-checked="${isSet}" tabindex="0">${isSet ? '✓' : ''}</span>
     <div class="txn-icon">${icon}</div>
     <div class="txn-main">
-      <div class="txn-cat">${escapeHtml(t.category)}</div>
+      <div class="txn-cat">${escapeHtml(t.category)}${isSet ? '<span class="settled-badge">已結算</span>' : ''}</div>
       <div class="txn-meta">${fmtDate(t.date)}${payerStr ? ' · ' + escapeHtml(payerStr) : ''}${sp ? ' · ' + escapeHtml(sp) : ''}</div>
     </div>
     <div class="txn-amount expense">-${fmtMoneyCur(t.amount, t.currency || '')}${curBadge(t.currency || '')}</div>

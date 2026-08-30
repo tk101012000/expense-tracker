@@ -1,10 +1,10 @@
 /* Service Worker · 離線快取 */
-const CACHE = 'billkeeper-v29';
+const CACHE = 'billkeeper-v30';
 const ASSETS = [
   './',
   './index.html',
   './css/styles.css',
-  './js/app.yu-v3.76.js',
+  './js/app.yu-v3.78.js',
   './js/cloud.yu-v3.70.js',
   './manifest.json',
   './icons/icon-192.png',
@@ -12,7 +12,7 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(CACHE).then(c => Promise.all(ASSETS.map(u => c.add(u).catch(() => null)))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', e => {

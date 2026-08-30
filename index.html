@@ -14,7 +14,7 @@
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="css/styles.css?v=yu-v3.76" />
+  <link rel="stylesheet" href="css/styles.css?v=yu-v3.78" />
   <!-- OAuth 回傳橋接：本頁若在「系統瀏覽器 / Chrome Custom Tabs」（非 App 內 WebView）載入，
        且網址帶 ?code=（Google 授權回傳），則改以自訂 scheme 把 code/state 回傳給 Android App，
        避開嵌入 WebView 的 disallowed_useragent。桌面瀏覽器（非 Android）不攔截，照常走 handleRedirect。 -->
@@ -447,6 +447,8 @@
       <button class="sel-cancel" id="selCancel">取消</button>
       <span class="sel-count" id="selCount">已選 0 項</span>
       <button class="sel-all" id="selAll">全選</button>
+      <button class="sel-all" id="selSettle" disabled>標記已結算 (0)</button>
+      <button class="sel-all" id="selUnsettle" disabled>取消結算</button>
       <button class="sel-delete" id="selDelete" disabled>刪除 (0)</button>
     </div>
 
@@ -877,6 +879,6 @@
   <div id="srStatus" class="sr-only" role="status" aria-live="polite"></div>
 
   <script src="js/cloud.yu-v3.70.js?v=yu-v3.70"></script>
-  <script src="js/app.yu-v3.76.js?v=yu-v3.76"></script>
+  <script src="js/app.yu-v3.78.js?v=yu-v3.78"></script>
 </body>
 </html>
