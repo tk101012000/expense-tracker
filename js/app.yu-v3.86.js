@@ -110,7 +110,7 @@ const CHART_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#f59e0b', '#8b5cf6', '#0
 function cssVar(name, fallback) { const v = getComputedStyle(document.body).getPropertyValue(name); return v ? v.trim() : (fallback || ''); }
 
 /* ---------- 版本資訊 ---------- */
-const APP_VERSION = 'yu-v3.85';
+const APP_VERSION = 'yu-v3.86';
 const APP_BUILD_DATE = '2026-08-30';
 // 暴露給原生 APP（TWA）讀取，使頁尾版本號隨網頁自動更新
 window.APP_VERSION = APP_VERSION;
@@ -3223,6 +3223,10 @@ function tripTxns(trip) {
     .sort((a, b) => (b.date + (b.createdAt || 0)).localeCompare(a.date + (a.createdAt || 0)));
 }
 // 旅程內每人結算：paid=墊付, payable=應負擔；無分擔時由付款人全額負擔
+// v3.86：改用「項目 ID 快照」當結清起點（與帳戶「每人應付」同一套語意）。
+//   標記已結算時，把該成員目前計入的花費 key（txn:<id>）快照進 trip.settleSkip[成員id]，
+//   之後一律跳過 → 本輪結算金額立即歸零；旅程再新增花費（新 key）則從 0 重新累積。
+//   （v3.85 以前只有 trip.settled 布林，勾了金額照算，等於沒有結清效果。）
 function computeTripSettle(trip) {
   const tcur = trip.currency || DB.settings.currency;
   const conv = (amt, code) => tripConvert(amt, code, tcur, trip.rates);
@@ -3231,48 +3235,59 @@ function computeTripSettle(trip) {
     const m = DB.members.find(x => x.id === id);
     if (m) map.set(id, { id, name: m.name, payable: 0, paid: 0 });
   });
+  const skip = trip.settleSkip || {};
+  const fresh = (mid, key) => { const s = skip[mid]; return !s || s.indexOf(key) === -1; };
+  const keysByMember = {};                       // 本次實際計入的項目 key（供結算快照用）
+  const addKey = (mid, key) => { (keysByMember[mid] || (keysByMember[mid] = new Set())).add(key); };
+  const ensure = id => {
+    if (!map.has(id)) {
+      const m = DB.members.find(x => x.id === id);
+      if (m) map.set(id, { id, name: m.name, payable: 0, paid: 0 });
+    }
+    return map.get(id);
+  };
   const txns = (trip.txns || []).filter(t => t.type === 'expense');
   let total = 0, count = 0;
   txns.forEach(t => {
     const v = conv(t.amount, t.currency);
     total += v; count++;
+    // 單筆已標記「已結算」（花費明細批次勾選）→ 不再計入團員結算（但仍算進旅程總花費）
+    if (t.settled) return;
+    const key = 'txn:' + t.id;
     // 付款人（相容舊單值 & 新陣列）：多人合付時，每人墊付金額均分
     const payerIds = Array.isArray(t.paidBy) ? t.paidBy : (t.paidBy ? [t.paidBy] : []);
     const payerCount = payerIds.length || 1;
     const paidEach = v / payerCount;
     payerIds.forEach(pid => {
       if (!pid) return;
-      if (!map.has(pid)) {
-        const m = DB.members.find(x => x.id === pid);
-        if (m) map.set(pid, { id: pid, name: m.name, payable: 0, paid: 0 });
-      }
-      const pm = map.get(pid);
-      if (pm) pm.paid += paidEach;
+      const pm = ensure(pid);
+      if (pm && fresh(pid, key)) { pm.paid += paidEach; addKey(pid, key); }
     });
     if (t.splitMode && t.splitMode !== 'none' && Array.isArray(t.shares) && t.shares.length) {
       const amts = computeSplitAmounts(t.amount, t.splitMode, t.shares);
       amts.forEach(a => {
         if (!a.memberId) return;
         const share = conv(a.amount, t.currency);
-        if (!map.has(a.memberId)) {
-          const m = DB.members.find(x => x.id === a.memberId);
-          if (m) map.set(a.memberId, { id: a.memberId, name: m.name, payable: 0, paid: 0 });
-        }
-        map.get(a.memberId).payable += share;
+        const sm = ensure(a.memberId);
+        if (sm && fresh(a.memberId, key)) { sm.payable += share; addKey(a.memberId, key); }
       });
     } else if (payerIds.length) {
       // 無分擔：由付款人全額負擔（多人則均攤）
       payerIds.forEach(pid => {
         const pm = map.get(pid);
-        if (pm) pm.payable += paidEach;
+        if (pm && fresh(pid, key)) { pm.payable += paidEach; addKey(pid, key); }
       });
     }
   });
   const settledSet = new Set(trip.settled || []);
-  const rows = [...map.values()].filter(r => r.payable > 0 || r.paid > 0)
+  // 已結算成員即使歸零也要保留在列（否則取消結算的入口會跟著消失）
+  const rows = [...map.values()]
+    .filter(r => r.payable > 0.005 || r.paid > 0.005 || settledSet.has(r.id))
     .map(r => ({ ...r, net: Math.round((r.paid - r.payable) * 100) / 100, settled: settledSet.has(r.id) }));
   rows.sort((a, b) => b.net - a.net);
-  return { rows, total: Math.round(total * 100) / 100, count };
+  const keysOut = {};
+  Object.keys(keysByMember).forEach(mid => { keysOut[mid] = [...keysByMember[mid]]; });
+  return { rows, total: Math.round(total * 100) / 100, count, keysByMember: keysOut };
 }
 // 由每人淨額產生「誰該付給誰」清單（貪心配對）
 function settleDebts(rows) {
@@ -3384,7 +3399,12 @@ function renderTripDetail(id) {
   });
   const catData = Object.entries(catMap).map(([name, value]) => ({ name, value: Math.round(value * 100) / 100 }));
   const settle = computeTripSettle(trip);
-  const debts = settleDebts(settle.rows.filter(r => !r.settled));
+  // v3.86：動態「已結算」判定 —— 曾結算過 && 本輪已無未結清項目
+  // （結清後又新增花費 → 自動變回未勾選，避免出現「有新帳卻掛著綠勾」的假象）
+  const tripHistSet = new Set(trip.settled || []);
+  const tripKeysMap = settle.keysByMember || {};
+  const tripIsSettled = r => tripHistSet.has(r.id) && (tripKeysMap[r.id] || []).length === 0;
+  const debts = settleDebts(settle.rows.filter(r => !tripIsSettled(r)));
   const days = (trip.startDate && trip.endDate) ? `${trip.startDate} ~ ${trip.endDate}` : (trip.startDate || trip.endDate || '未設日期');
   wrap.innerHTML = `
     <div class="trip-detail-head">
@@ -3424,11 +3444,19 @@ function renderTripDetail(id) {
           const net = r.net;
           const cls = net > 0.005 ? 'recv' : (net < -0.005 ? 'owe' : 'even');
           const txt = net > 0.005 ? `應收 ${fmtMoneyCur(net, tcur)}` : (net < -0.005 ? `應付 ${fmtMoneyCur(-net, tcur)}` : '已兩清');
-          const isSet = !!r.settled;
+          const isSet = tripIsSettled(r);
+          const pending = (tripKeysMap[r.id] || []).length;
+          const badge = isSet
+            ? '<span class="settled-badge">已結算</span>'
+            : (r.settled && pending ? `<span class="settled-badge pending">新費用 ${pending} 筆</span>` : '');
+          // 勾選框：未結算＝label+input（40px 透明實體點擊區）；已結算＝可按的取消按鈕
+          const box = isSet
+            ? `<button type="button" class="pick-box done" data-tripunsettle="${escapeHtml(r.id)}" title="點擊取消 ${escapeHtml(r.name)} 的結算標記（結算前的舊帳會加回計算）"><span class="tick">✓</span></button>`
+            : `<label class="pick-box"><input type="checkbox" data-tsett="${escapeHtml(r.id)}"/><span class="tick">✓</span></label>`;
           return `<div class="pay-row settle-pick${isSet ? ' is-settled' : ''}">
-            <span class="pick-box${isSet ? ' done' : ''}" data-pick="${escapeHtml(r.id)}" role="checkbox" aria-checked="${isSet}" tabindex="0">${isSet ? '✓' : ''}</span>
+            ${box}
             <div class="pay-main">
-              <div class="pay-top"><span class="pay-name">${escapeHtml(r.name)}${isSet ? '<span class="settled-badge">已結算</span>' : ''}</span><span class="pay-net ${cls}">${txt}</span></div>
+              <div class="pay-top"><span class="pay-name">${escapeHtml(r.name)}${badge}</span><span class="pay-net ${cls}">${txt}</span></div>
               <div class="pay-detail"><span>應付 ${fmtMoneyCur(Math.round(r.payable * 100) / 100, tcur)}</span><span class="dot">·</span><span>已付 ${fmtMoneyCur(Math.round(r.paid * 100) / 100, tcur)}</span></div>
             </div>
           </div>`;
@@ -3441,9 +3469,8 @@ function renderTripDetail(id) {
         <span class="settle-count" id="tripSettleCount"></span>
         <span class="settle-bar-btns">
           <button class="ghost-btn small" type="button" id="tripSettleAll">全選</button>
-          <button class="ghost-btn small" type="button" id="tripSettleNone">取消</button>
+          <button class="primary-btn small" type="button" id="tripSettleMark" hidden>標記已結算</button>
           <button class="ghost-btn small" type="button" id="tripSettleReset" hidden>取消結算</button>
-          <button class="primary-btn small" type="button" id="tripSettleMark">標記已結算</button>
         </span>
       </div>` : ''}
     </div>
@@ -3457,9 +3484,8 @@ function renderTripDetail(id) {
         <span class="settle-count" id="tripTxnCount"></span>
         <span class="settle-bar-btns">
           <button class="ghost-btn small" type="button" id="tripTxnAll">全選</button>
-          <button class="ghost-btn small" type="button" id="tripTxnNone">取消</button>
+          <button class="primary-btn small" type="button" id="tripTxnMark" hidden>標記已結算</button>
           <button class="ghost-btn small" type="button" id="tripTxnUnset" hidden>取消結算</button>
-          <button class="primary-btn small" type="button" id="tripTxnMark">標記已結算</button>
         </span>
       </div>` : ''}
     </div>`;
@@ -3481,7 +3507,8 @@ function renderTripDetail(id) {
   wireTripTxnSettle(wrap, trip, id);
   const txnList = wrap.querySelector('#tripTxnList');
   if (txnList) txnList.addEventListener('click', e => {
-    if (e.target.closest('[data-tpick]')) return;
+    // v3.86：勾選框整塊（label 含透明 input）都不該觸發「開啟編輯」
+    if (e.target.closest('.pick-box')) return;
     const item = e.target.closest('[data-ttxn]');
     if (!item) return;
     const tid = item.dataset.ttxn;
@@ -3490,62 +3517,115 @@ function renderTripDetail(id) {
   });
 }
 
-/* ---------- v3.77：團員結算多選「已結算」批次標記 ---------- */
+/* ---------- v3.77 建立 / v3.86 重寫：團員結算多選「已結算」批次標記 ----------
+   v3.86 與帳戶「每人應付」同步三件事：
+   ① 結清起點：標記時把當下計入的項目 key 快照進 trip.settleSkip[成員id]，本輪金額立即歸零
+   ② 動態已結算：曾結算 && 本輪無未結清項目；有新花費自動變回未勾選 + 「新費用 N 筆」徽章
+   ③ 40px 實體點擊區（label+input）+ 批次列常駐（全數結清時「取消結算」入口也要在）
+------------------------------------------------------------------------------ */
 function wireTripSettle(wrap, trip, tripId) {
   const list = wrap.querySelector('#tripSettleList');
   const bar = wrap.querySelector('#tripSettleBar');
   if (!list || !bar) return;
   const cntEl = wrap.querySelector('#tripSettleCount');
+  const markBtn = wrap.querySelector('#tripSettleMark');
   const resetBtn = wrap.querySelector('#tripSettleReset');
+  const allBtn = wrap.querySelector('#tripSettleAll');
   const picked = new Set();
-  const settledIds = new Set(trip.settled || []);
+
+  const boxes = () => [...list.querySelectorAll('[data-tsett]')];
 
   const refresh = () => {
-    list.querySelectorAll('[data-pick]').forEach(b => {
-      const mid = b.dataset.pick;
-      const isSet = settledIds.has(mid);
-      b.classList.toggle('done', isSet);
-      b.classList.toggle('on', !isSet && picked.has(mid));
-      b.textContent = isSet ? '✓' : '';
+    // 只切 class，勿用 textContent（會連裡面的 input 一起移除）
+    boxes().forEach(cb => {
+      const w = cb.closest('.pick-box');
+      if (w) w.classList.toggle('on', picked.has(cb.dataset.tsett));
     });
-    const n = picked.size, s = settledIds.size;
-    bar.hidden = !(n || s);
+    const n = picked.size;
+    const s = (trip.settled || []).length;
+    const pickable = boxes().length;
+    // 全部都已結算時也要留著工具列，否則「取消結算」入口會消失
+    bar.hidden = !(pickable || s);
+    // 結清後又產生新花費的成員數（動態重算，避免用快取的舊狀態）
+    let newCnt = 0;
+    if (s) {
+      const k = (computeTripSettle(trip).keysByMember) || {};
+      newCnt = (trip.settled || []).filter(m => (k[m] || []).length > 0).length;
+    }
     const parts = [];
     if (n) parts.push('已選 ' + n + ' 位');
     if (s) parts.push('已結算 ' + s + ' 位');
-    cntEl.textContent = parts.join(' · ');
+    if (newCnt) parts.push('其中 ' + newCnt + ' 位有新費用');
+    cntEl.textContent = parts.join(' · ') || '勾選成員後可批次標記已結算';
+    markBtn.hidden = !n;
     resetBtn.hidden = !s;
+    allBtn.hidden = !pickable;
+    allBtn.textContent = (pickable && n >= pickable) ? '取消全選' : '全選';
   };
 
-  list.addEventListener('click', e => {
-    const box = e.target.closest('[data-pick]');
-    if (!box) return;
-    const mid = box.dataset.pick;
-    if (settledIds.has(mid)) return;
+  if (allBtn) allBtn.onclick = () => {
+    const bs = boxes();
+    if (!bs.length) return;
+    const allPicked = bs.every(cb => picked.has(cb.dataset.tsett));
+    bs.forEach(cb => {
+      const mid = cb.dataset.tsett;
+      const on = !allPicked;
+      if (on) picked.add(mid); else picked.delete(mid);
+      cb.checked = on;
+    });
+    refresh();
+  };
+
+  // 勾選由 input 自己觸發 change（label 的 activation behavior 會轉發給 input）
+  // 註：不要再寫「點 .pick-box 就手動切換」的後備邏輯——label 的轉發發生在事件冒泡「之後」，
+  //     兩邊都切換會互相抵消（勾了又馬上取消）。input 本身已是 40px 透明點擊區。
+  list.addEventListener('change', e => {
+    const cb = e.target.closest('[data-tsett]');
+    if (!cb || cb.disabled) return;
+    const mid = cb.dataset.tsett;
     if (picked.has(mid)) picked.delete(mid); else picked.add(mid);
+    cb.checked = picked.has(mid);
     refresh();
   });
 
-  const allBtn = wrap.querySelector('#tripSettleAll');
-  const noneBtn = wrap.querySelector('#tripSettleNone');
-  const markBtn = wrap.querySelector('#tripSettleMark');
-  if (allBtn) allBtn.onclick = () => {
-    list.querySelectorAll('[data-pick]').forEach(b => { if (!settledIds.has(b.dataset.pick)) picked.add(b.dataset.pick); });
-    refresh();
-  };
-  if (noneBtn) noneBtn.onclick = () => { picked.clear(); refresh(); };
+  // 點綠色勾＝單獨取消該成員的結算（結算前的舊帳會加回計算）
+  list.addEventListener('click', e => {
+    const btn = e.target.closest('[data-tripunsettle]');
+    if (!btn) return;
+    const mid = btn.dataset.tripunsettle;
+    trip.settled = (trip.settled || []).filter(x => x !== mid);
+    if (trip.settleSkip) delete trip.settleSkip[mid];
+    save();
+    renderTripDetail(tripId);
+    toast('已取消結算標記，結算前的帳目已加回計算');
+  });
+
   if (resetBtn) resetBtn.onclick = () => {
     trip.settled = [];
+    trip.settleSkip = {};
     save();
     renderTripDetail(tripId);
-    toast('已取消全部結算標記');
+    toast('已取消全部結算標記，恢復計算全部帳目');
   };
   if (markBtn) markBtn.onclick = () => {
-    if (!picked.size) { toast('請先勾選成員'); return; }
-    trip.settled = [...new Set([...(trip.settled || []), ...picked])];
+    const n = picked.size;
+    if (!n) { toast('請先勾選成員'); return; }
+    const set = new Set(trip.settled || []);
+    const skip = trip.settleSkip || (trip.settleSkip = {});
+    // 用「本次結算當下」的計算結果快照要排除的項目
+    const keys = (computeTripSettle(trip).keysByMember) || {};
+    let cleared = 0;
+    picked.forEach(m => {
+      set.add(m);
+      const prev = new Set(skip[m] || []);
+      (keys[m] || []).forEach(k => prev.add(k));
+      skip[m] = [...prev];
+      cleared += (keys[m] || []).length;
+    });
+    trip.settled = [...set];
     save();
-    toast('已標記 ' + picked.size + ' 位為已結算');
     renderTripDetail(tripId);
+    toast(`已結算 ${n} 位 · 清除 ${cleared} 筆本輪帳目，之後新增的花費從 0 起算`);
   };
   refresh();
 }
@@ -3557,50 +3637,75 @@ function wireTripTxnSettle(wrap, trip, tripId) {
   if (!list || !bar) return;
   const cntEl = wrap.querySelector('#tripTxnCount');
   const unsetBtn = wrap.querySelector('#tripTxnUnset');
+  const markBtn = wrap.querySelector('#tripTxnMark');
+  const allBtn = wrap.querySelector('#tripTxnAll');
   const picked = new Set();
   const findTxn = tid => (trip.txns || []).find(x => x.id === tid);
   const isSettled = tid => { const t = findTxn(tid); return !!(t && t.settled); };
   const settledCount = () => (trip.txns || []).filter(t => t.settled).length;
+  const boxes = () => [...list.querySelectorAll('[data-tpick]')];
 
   const refresh = () => {
-    list.querySelectorAll('[data-tpick]').forEach(b => {
-      const tid = b.dataset.tpick;
-      const isSet = isSettled(tid);
-      b.classList.toggle('done', isSet);
-      b.classList.toggle('on', !isSet && picked.has(tid));
-      b.textContent = isSet ? '✓' : '';
+    // 只切 class，勿用 textContent（會連裡面的 input 一起移除）
+    boxes().forEach(cb => {
+      const w = cb.closest('.pick-box');
+      if (w) w.classList.toggle('on', picked.has(cb.dataset.tpick));
     });
     const n = picked.size, s = settledCount();
-    bar.hidden = !(n || s);
+    const pickable = boxes().length;
+    // 全部都已結算時也要留著工具列，否則「取消結算」入口會消失
+    bar.hidden = !(pickable || s);
     const parts = [];
     if (n) parts.push('已選 ' + n + ' 筆');
     if (s) parts.push('已結算 ' + s + ' 筆');
-    cntEl.textContent = parts.join(' · ');
+    cntEl.textContent = parts.join(' · ') || '勾選花費後可批次標記已結算';
+    if (markBtn) markBtn.hidden = !n;
     unsetBtn.hidden = !s;
+    if (allBtn) {
+      allBtn.hidden = !pickable;
+      allBtn.textContent = (pickable && n >= pickable) ? '取消全選' : '全選';
+    }
   };
 
-  list.addEventListener('click', e => {
-    const box = e.target.closest('[data-tpick]');
-    if (!box) return;
-    const tid = box.dataset.tpick;
-    if (isSettled(tid)) return;
+  // 勾選由 input 自己觸發 change；不再用手動切換後備（label 轉發在冒泡後，會互相抵消）
+  list.addEventListener('change', e => {
+    const cb = e.target.closest('[data-tpick]');
+    if (!cb || cb.disabled) return;
+    const tid = cb.dataset.tpick;
+    if (isSettled(tid)) { cb.checked = false; return; }
     if (picked.has(tid)) picked.delete(tid); else picked.add(tid);
+    cb.checked = picked.has(tid);
     refresh();
   });
 
-  const allBtn = wrap.querySelector('#tripTxnAll');
-  const noneBtn = wrap.querySelector('#tripTxnNone');
-  const markBtn = wrap.querySelector('#tripTxnMark');
+  // 點綠色勾＝單獨取消這一筆的結算（重新計入團員結算）
+  list.addEventListener('click', e => {
+    const btn = e.target.closest('[data-tunset]');
+    if (!btn) return;
+    const t = findTxn(btn.dataset.tunset);
+    if (t) t.settled = false;
+    save();
+    renderTripDetail(tripId);
+    toast('已取消這筆的結算標記，重新計入團員結算');
+  });
+
   if (allBtn) allBtn.onclick = () => {
-    list.querySelectorAll('[data-tpick]').forEach(b => { if (!isSettled(b.dataset.tpick)) picked.add(b.dataset.tpick); });
+    const bs = boxes();
+    if (!bs.length) return;
+    const allPicked = bs.every(cb => picked.has(cb.dataset.tpick));
+    bs.forEach(cb => {
+      const tid = cb.dataset.tpick;
+      const on = !allPicked && !isSettled(tid);
+      if (on) picked.add(tid); else picked.delete(tid);
+      cb.checked = on;
+    });
     refresh();
   };
-  if (noneBtn) noneBtn.onclick = () => { picked.clear(); refresh(); };
   if (unsetBtn) unsetBtn.onclick = () => {
     (trip.txns || []).forEach(t => { t.settled = false; });
     save();
     renderTripDetail(tripId);
-    toast('已取消全部花費結算標記');
+    toast('已取消全部花費結算標記，全部重新計入團員結算');
   };
   if (markBtn) markBtn.onclick = () => {
     if (!picked.size) { toast('請先勾選花費'); return; }
@@ -3620,8 +3725,12 @@ function tripTxnRow(t, tcur) {
   const payerNames = payerIds.map(id => { const m = DB.members.find(x => x.id === id); return m ? m.name : id; });
   const payerStr = payerNames.length ? '付：' + payerNames.join('、') : '';
   const isSet = !!t.settled;
+  // v3.86：勾選框改 label+input（40px 透明實體點擊區）；已結算改為可按的取消按鈕
+  const box = isSet
+    ? `<button type="button" class="pick-box done" data-tunset="${t.id}" title="點擊取消這筆的結算標記（會重新計入團員結算）"><span class="tick">✓</span></button>`
+    : `<label class="pick-box"><input type="checkbox" data-tpick="${t.id}"/><span class="tick">✓</span></label>`;
   return `<div class="txn-item${isSet ? ' is-settled' : ''}" data-ttxn="${t.id}">
-    <span class="pick-box${isSet ? ' done' : ''}" data-tpick="${t.id}" role="checkbox" aria-checked="${isSet}" tabindex="0">${isSet ? '✓' : ''}</span>
+    ${box}
     <div class="txn-icon">${icon}</div>
     <div class="txn-main">
       <div class="txn-cat">${escapeHtml(t.category)}${isSet ? '<span class="settled-badge">已結算</span>' : ''}</div>
