@@ -170,7 +170,7 @@ computeSplitAmounts(total, splitMode, shares)
 
 | 項目 | 說明 |
 |---|---|
-| **簽名 keystore** | `expense-tracker-release.keystore`（本機在 `C:/Users/ASUS/Downloads/`）|
+| **簽名 keystore** | `expense-tracker-release.keystore`（本機實際在 `E:/NAS/記帳app/`，2026-08-30 確認存在。⚠️ 記憶與舊文件曾誤記為 `C:/Users/ASUS/Downloads/`，那是錯的；找不到時請全碟搜尋檔名）|
 | **alias** | `expensekey` |
 | **密碼** | 請見你另行妥善保管的記錄（**本倉庫不存放憑證**）|
 | **證書 SHA-256** | `1B:78:56:90:63:62:66:7A:29:EC:81:F8:60:C7:4E:8B:79:1C:66:0C:44:56:E5:69:03:31:07:72:0D:75:06:DC` |
@@ -200,6 +200,9 @@ java -jar apktool.jar d -f <原APK> -o decoded
 #      versionName: 設成與網頁一致，如 yu-v3.47
 
 # 3) （見 4.3）若從「原始 v3.41 APK」decode，需 patch smali 原生注入版本號
+
+# 3.5) （見 4.4）重設桌面圖示為熊貓 ← 別忘了這步，否則桌面圖示會退回舊圖
+python tools/build_launcher_icons.py decoded/res
 
 # 4) 重打包
 java -jar apktool.jar b decoded -o unsigned.apk
@@ -249,6 +252,55 @@ if(d)d.textContent=('更新於 '+(window.APP_BUILD_DATE||'YYYY-MM-DD'));
 > **重要**：若你是從「原始 v3.41 APK」重新 `apktool d`，smali 會再次硬寫 v3.41，
 > 必須重新套用上述 patch。若你是從「已修正的 v3.46+ APK」decode，則已含修正。
 > 網頁端 `app.yu-vX.YZ.js` 必須保持 `window.APP_VERSION = APP_VERSION;`，否則頁尾會退回備援值。
+
+### 4.4 ⚠️ APK 桌面圖示必須是熊貓（每次重打包都要做）
+
+**症狀**：使用者回報「我的圖示原本是熊貓」，但手機桌面看到的不是。
+
+**根因**：`decoded/` 是從**原始 v3.41 APK** 反編譯來的，它的
+`res/mipmap-*/ic_launcher.png` 是那時候的「藍底 ¥ 符號」圖，**從來沒更新過**。
+網頁的 `icons/*.png`（熊貓）跟 APK 的 mipmap 是**兩套獨立資源**，
+改網頁圖示不會動到 APK 桌面圖示。v3.50 那次有手動換過（檔名
+`expense-tracker-yu-v3.50-panda.apk`），但之後每次從 `decoded/` 重打包就打回原形。
+
+**解法（已腳本化）**：重打包前先跑一次
+
+```bash
+python tools/build_launcher_icons.py <decoded的res目錄>
+#   來源圖預設用 icons/icon-512.png（熊貓）
+#   例：python tools/build_launcher_icons.py ../decoded/res
+```
+
+腳本產生 mdpi 48 / hdpi 72 / xhdpi 96 / xxhdpi 144 / xxxhdpi 192 五種密度的
+`ic_launcher.png` 與 `ic_launcher_round.png`，**總是同步**更新（約 188KB）。
+
+#### 為什麼不能直接把 `icons/icon-512.png` 塞進 mipmap？
+
+網頁 icon-512.png 是**真實照片**：RGB 無 alpha，四角是雜亂的拍攝背景
+（左上 `#7a7a5e`、左下 `#040406`、右上 `#764e20`、右下 `#968a72`）。
+整張滿版當 launcher，Android 各廠牌遮罩（圓形／圓角方形／水滴）裁下去
+就會露出那圈雜亂背景。
+
+#### 構圖設計（勿任意改動）
+
+本專案沒有 `mipmap-anydpi-v26/`，`AndroidManifest.xml` 直接指 `@mipmap/ic_launcher`，
+所以走 **legacy PNG 路徑**——Android 8+ 會拿這張 PNG 直接套自家遮罩。
+因此構圖必須「滿版可裁」：
+
+| 元素 | 規格 | 理由 |
+|---|---|---|
+| 底色 | 品牌藍 `#2563eb` 滿版 | 沿用 `res/drawable/ic_launcher.xml`；與網頁 `icon-maskable-512.png` 一致 |
+| 熊貓 | 圓形，直徑 = 圖示 **74%** | 大於 Android adaptive icon 的 66% 安全區，任何遮罩都裁不到主體 |
+| 白環 | 寬度 2.8%，高斯模糊柔邊 | 讓主體從底色浮出，48px 小尺寸仍可辨識 |
+
+**驗證**（打包後）：
+```bash
+# 四角必須是品牌藍 (37,99,235)，代表外圍是乾淨底色而非照片背景
+# 用 Pillow 或任何看圖軟體開 res/mipmap-xxxhdpi/ic_launcher.png 確認
+```
+
+> 已於 2026-08-30 修復並出 `expense-tracker-yu-v3.86-panda.apk`
+> （versionCode 386 / versionName yu-v3.86，簽名指紋與既有版本一致，可直接覆蓋安裝）。
 
 ---
 
