@@ -949,9 +949,16 @@ body[data-theme="dark"] .skeleton::after { background: linear-gradient(90deg, tr
   background: var(--surface-2);
   display: inline-flex; align-items: center; justify-content: center;
   font-size: 13px; line-height: 1; color: #fff; cursor: pointer; user-select: none;
+  position: relative;   /* v3.85：提供放大點擊區的定位基準 */
 }
 .pick-box.on { background: var(--primary); border-color: var(--primary); }
-.pick-box input { display: none; }
+/* v3.85：原本 display:none 要靠 label 轉發點擊，部分 Android WebView 不會轉發 → 點了沒反應。
+   改成透明 input 實體覆蓋、向外擴張到 40px，手指直接點在 input 上，不依賴 label activation。 */
+.pick-box input {
+  position: absolute; left: -9px; top: -9px;
+  width: 40px; height: 40px; margin: 0; padding: 0;
+  opacity: 0; cursor: pointer; -webkit-appearance: none; appearance: none;
+}
 /* v3.81：勾選符號改由 .tick 子元素呈現，勿用 textContent 覆寫（會把 input 一起幹掉） */
 .pick-box .tick { display: none; font-size: 13px; line-height: 1; color: #fff; }
 .pick-box.on .tick, .pick-box.done .tick { display: block; }
@@ -972,6 +979,9 @@ button.pick-box.done:hover { filter: brightness(1.08); }
   display: flex; align-items: center; gap: 8px; margin-top: 12px;
   padding: 10px 12px; border: 1px solid var(--border);
   border-radius: 12px; background: var(--surface-2);
+  /* v3.85：批次列固定在畫面底部，成員一多時「標記已結算」才不會被擠到螢幕外看不見 */
+  position: sticky; bottom: 6px; z-index: 6;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .18);
 }
 .settle-count { font-size: 13px; color: var(--text-2); }
 .settle-bar-btns { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; }

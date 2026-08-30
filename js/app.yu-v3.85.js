@@ -110,7 +110,7 @@ const CHART_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#f59e0b', '#8b5cf6', '#0
 function cssVar(name, fallback) { const v = getComputedStyle(document.body).getPropertyValue(name); return v ? v.trim() : (fallback || ''); }
 
 /* ---------- 版本資訊 ---------- */
-const APP_VERSION = 'yu-v3.84';
+const APP_VERSION = 'yu-v3.85';
 const APP_BUILD_DATE = '2026-08-30';
 // 暴露給原生 APP（TWA）讀取，使頁尾版本號隨網頁自動更新
 window.APP_VERSION = APP_VERSION;
@@ -1994,17 +1994,22 @@ function wirePaySettle() {
       cb.checked = pickedSet.has(mid);
       refreshBar();
     });
-    // v3.82：點綠色勾可單獨取消該成員的結算（結算前的舊帳會加回計算）
     el.addEventListener('click', e => {
+      // 點綠色勾＝單獨取消該成員的結算（結算前的舊帳會加回計算）
       const btn = e.target.closest('[data-punsettle]');
-      if (!btn) return;
-      const mid = btn.dataset.punsettle;
-      DB.paySettled = (DB.paySettled || []).filter(x => x !== mid);
-      if (DB.paySettleSince) delete DB.paySettleSince[mid];
-      if (DB.paySettleSkip) delete DB.paySettleSkip[mid];
-      save();
-      renderPaySettle();
-      toast('已取消結算標記，結算前的帳目已加回計算');
+      if (btn) {
+        const mid = btn.dataset.punsettle;
+        DB.paySettled = (DB.paySettled || []).filter(x => x !== mid);
+        if (DB.paySettleSince) delete DB.paySettleSince[mid];
+        if (DB.paySettleSkip) delete DB.paySettleSkip[mid];
+        save();
+        renderPaySettle();
+        toast('已取消結算標記，結算前的帳目已加回計算');
+      }
+      // 註：不要再寫「點 .pick-box 就手動切換」的後備邏輯——
+      // label 的 activation behavior 是在事件冒泡「之後」才轉發給 input，
+      // 兩邊都切換會互相抵消（勾了又馬上取消）。
+      // 現在 input 本身是 40px 透明實體點擊區，手指直接點得到，不需要後備。
     });
     el.__payWired = true;
   }
