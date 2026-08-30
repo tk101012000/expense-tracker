@@ -16,11 +16,13 @@
 | 項目 | 內容 |
 |---|---|
 | Repo | `https://github.com/tk101012000/expense-tracker`（分支 `main`）|
+| 姊妹 repo | `https://github.com/tk101012000/expense-tracker-android`（分支 `master`）——存放 APK 二進位與 Gradle 源碼。**改 APK 殼一定要先讀本檔 §4.0** |
 | 型態 | 純前端 PWA，**無後端**，資料存 localStorage |
 | 進入點 | `index.html` → `js/app.yu-vX.YZ.js` + `js/cloud.yu-vX.YZ.js` |
 | 樣式 | `css/styles.css` |
 | 離線快取 | `sw.js`（**JS 改名時必須同步 `CACHE` 與 `ASSETS`**，否則使用者會一直載到舊版）|
 | 部署 | push `main` → GitHub Pages 自動上線，約 1 分鐘 |
+| 圖示 | 網頁用 `icons/`（熊貓）；**APK 桌面圖示是另一套**，重打包前必須跑 `tools/build_launcher_icons.py`（§4.4、DESIGN.md §13） |
 
 **協作偏好（使用者指定，請務必遵守）**
 
@@ -35,6 +37,17 @@
 > 然後**完整讀一遍倉庫根目錄的 `BUILD.md` 和 `DESIGN.md`**——所有背景、已知陷阱、版本號規則
 > 和我的協作偏好都寫在裡面，讀完你就具備完整上下文。
 > 讀完先簡述你理解的現況，再開始動手。我要改的是：＿＿＿＿。
+
+> **如果要改的是 APK 殼（不是網頁）**，改用這段：
+>
+> 這是我的記帳 App，網頁版在 `tk101012000/expense-tracker`，
+> Android 殼在 `tk101012000/expense-tracker-android`。請先讀 web repo 的 `BUILD.md`
+> **§4 重打包 APK，特別是 §4.0 打包基底要用哪個 APK**——
+> 這個殼有 v3.46～v3.85 累積的純 smali/dex 修改**只存在於 APK 二進位裡，沒有原始碼**，
+> 所以基底一定要用 android repo 裡的最新 APK（`apk/expense-tracker-yu-v3.86-panda.apk`）
+> 反編譯，**絕對不要用原始 v3.41 APK 重頭來**。
+> 另外重打包前要先跑 `python tools/build_launcher_icons.py decoded/res` 重設桌面圖示（§4.4），
+> 簽章 keystore 不在 repo 內，我會另外提供。
 
 ---
 
@@ -174,12 +187,40 @@ computeSplitAmounts(total, splitMode, shares)
 | **alias** | `expensekey` |
 | **密碼** | 請見你另行妥善保管的記錄（**本倉庫不存放憑證**）|
 | **證書 SHA-256** | `1B:78:56:90:63:62:66:7A:29:EC:81:F8:60:C7:4E:8B:79:1C:66:0C:44:56:E5:69:03:31:07:72:0D:75:06:DC` |
+| **打包基底 APK** | ⚠️ **必須用 android repo 的 `apk/expense-tracker-yu-v3.86-panda.apk`**（見下方 4.0）|
 | **apktool** | 2.11.1（`java -jar apktool.jar`）|
 | **JDK** | 17（`keytool` / `java` 所在）|
 | **Android SDK build-tools** | 含 `aapt` / `zipalign` / `lib/apksigner.jar` |
 
 > ⚠️ **keystore 檔 + 密碼務必備份**。弄丟就回到「每次都要卸載重裝」的原點。
 > 用這把 keystore 簽的 APK 之間可**互相覆蓋安裝**；與原始 v3.41（不同 key）不能覆蓋，須先卸載。
+
+### 4.0 ⚠️ 打包基底要用哪個 APK？（換電腦時第一件事就看這段）
+
+**絕對不要拿「原始 v3.41 APK」重新反編譯。** 這個殼歷經 v3.46～v3.85 累積了大量
+**純 smali / dex 層的修改**，那些改動**不存在於任何原始碼倉庫**，只存在於 APK 二進位裡：
+
+| 版本 | 改動 | 存放處 |
+|---|---|---|
+| v3.46 | 原生注入版本號改讀 `window.APP_VERSION`（原本硬寫 v3.41） | `classes3.dex` smali |
+| v3.73 | `handleIntent` 加 `billingtracker://quickadd` 分支 | `classes3.dex` smali |
+| v3.77 | `BKNATIVE.execCommand` 橋接（web→原生觸發） | `classes3.dex` smali |
+| v3.78 | `execCommand` 改 `runOnUiThread`（否則背景執行緒閃退） | `classes3.dex` smali |
+| v3.81 | `QuickAddCaptureActivity` 加 `taskAffinity` 隔離（singleTask 坑） | Manifest + smali |
+| v3.84 | `handleIntent` 的 `:cond_capture` 路由修復（原本是死碼） | `classes3.dex` smali |
+| v3.85 | capture 鏈三處 try-catch + Toast 診斷 | `classes3.dex` smali |
+| v3.73+ | 5 個 QuickAdd 元件（Capture/Notification 等） | `classes4.dex` |
+
+**正確做法**：直接從 android repo 抓最新 APK 當基底——
+
+```bash
+git clone https://github.com/tk101012000/expense-tracker-android.git
+java -jar apktool.jar d -f expense-tracker-android/apk/expense-tracker-yu-v3.86-panda.apk -o decoded
+```
+
+這樣所有 smali 修復都在，只需改你要改的部分。
+> 若真的只剩原始 v3.41 APK，則 §4.3 的 smali patch、classes4.dex 注入（§「新增原生 service」）
+> 全部要重做一遍，工時以小時計——**不要走這條路**。
 
 ### 4.2 重打包流程
 
@@ -193,7 +234,9 @@ KS_ALIAS=expensekey
 KS_PASS=<密碼>                            # 向使用者索取，勿硬寫進腳本/倉庫
 
 # 1) 反編譯（第一次做；之後改 decoded/ 即可）
-java -jar apktool.jar d -f <原APK> -o decoded
+#    ⚠️ 基底請用 android repo 的最新 APK，不要用原始 v3.41（見 4.0）
+git clone https://github.com/tk101012000/expense-tracker-android.git
+java -jar apktool.jar d -f expense-tracker-android/apk/expense-tracker-yu-v3.86-panda.apk -o decoded
 
 # 2) 改版本號：decoded/apktool.yml 的 versionInfo
 #      versionCode: 須 > 上一版（v3.46=346，下次=347...）
